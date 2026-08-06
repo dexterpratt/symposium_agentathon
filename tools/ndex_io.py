@@ -35,6 +35,18 @@ TELEMETRY_ATTR = "symposium_events"     # the log itself, JSONL in one attribute
 # still skipped; the name is the optimisation, the mark is the guarantee.
 TELEMETRY_SEGMENT = "_TELEMETRY_"
 
+# A session's own closing report: what it published, what refused it, what it could not say.
+# Owned by the Member, granted to the admin, and readable back by its author as a memory of
+# earlier sessions. Like telemetry it is NOT an Artifact and never enters the record.
+REPORT_MARK = "symposium_report"
+REPORT_ATTR = "symposium_report_text"
+REPORT_SEGMENT = "_REPORT_"
+
+# Everything the gate must not mistake for a bid for publication. The segments are checked on
+# the cheap summary before anything is downloaded; the marks are the guarantee afterwards.
+NON_ARTIFACT_MARKS = (TELEMETRY_MARK, REPORT_MARK)
+NON_ARTIFACT_SEGMENTS = (TELEMETRY_SEGMENT, REPORT_SEGMENT)
+
 
 def auth(prefix):
     """-> (username, basic-token) from NDEX_<PREFIX>_USER / _PASSWORD."""
@@ -125,7 +137,7 @@ def to_cx2(canonical, marks=None):
     ]
 
 
-def to_cx2_blob(name, description, payload, marks=None):
+def to_cx2_blob(name, description, payload, marks=None, attr=None):
     """An opaque payload as a CX2 network — used for the event log, never for an Artifact.
 
     This is NOT a projection of anything: there is no canonical JSON, no Objects, and
@@ -135,6 +147,7 @@ def to_cx2_blob(name, description, payload, marks=None):
     something this deployment has been tested to accept.
     """
     marks = dict(marks or {TELEMETRY_MARK: True})
+    attr = attr or TELEMETRY_ATTR
     return [
         {"CXVersion": "2.0", "hasFragments": False},
         {"metaData": [{"name": "attributeDeclarations", "elementCount": 1},
@@ -144,13 +157,13 @@ def to_cx2_blob(name, description, payload, marks=None):
         {"attributeDeclarations": [{
             "networkAttributes": dict(
                 {"name": {"d": "string"}, "description": {"d": "string"},
-                 TELEMETRY_ATTR: {"d": "string"}},
+                 attr: {"d": "string"}},
                 **{k: {"d": "boolean" if isinstance(v, bool) else "string"}
                    for k, v in marks.items()}),
             "nodes": {"name": {"d": "string"}, "type": {"d": "string"}}}]},
         {"networkAttributes": [dict(
-            {"name": name, "description": description, TELEMETRY_ATTR: payload}, **marks)]},
-        {"nodes": [{"id": 0, "v": {"name": "event log", "type": "Telemetry"}}]},
+            {"name": name, "description": description, attr: payload}, **marks)]},
+        {"nodes": [{"id": 0, "v": {"name": name, "type": "SessionOutput"}}]},
         {"edges": []},
         {"status": [{"error": "", "success": True}]},
     ]

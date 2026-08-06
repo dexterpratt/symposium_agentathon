@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
-"""Admin-side: pull the event logs Members have pushed, into one directory.
+"""Admin-side: pull what Members have pushed — event logs and session reports.
 
     python collect_logs.py --out ./events        # then: metrics.py --events ./events
+
+Logs land as `<owner>__<uuid>.jsonl`; session reports land as `<owner>__<uuid>.md` in a
+`reports/` subdirectory beside them. `metrics.py` reads the logs. The reports are for reading:
+the fourth thing every session is asked — what it wanted to express scientifically and could
+not — has no substitute anywhere else in the measurement, and no statistic will produce it.
 
 Discovery is the permission map, not search — the same reason the gate uses it: a freshly
 uploaded private network has `indexLevel: NONE` and never appears in `/v2/search/network`, so
 search-based discovery would silently drop logs exactly as it once silently dropped
 submissions. A member's grant IS the signal.
 
-Only networks marked `symposium_telemetry` are touched. Anything else granted to the admin is
-a submission and belongs to the gate; this tool never validates, never accepts, and never
-writes to the record.
+Only networks marked `symposium_telemetry` or `symposium_report` are touched. Anything else
+granted to the admin is a submission and belongs to the gate; this tool never validates, never
+accepts, and never writes to the record.
 
-Files are written as `<owner>__<uuid>.jsonl`, one per push. That is deliberately redundant:
-`metrics.py` de-duplicates on the whole event, so three pushes from one session produce three
-files whose overlapping events count once. Re-running is safe, collecting the same push twice
-is safe, and a log handed over on a memory stick can simply be dropped into the same
-directory alongside the pulled ones.
+One file per push, which is deliberately redundant: `metrics.py` de-duplicates on the whole
+event, so three pushes from one session produce three files whose overlapping events count
+once. Re-running is safe, collecting the same push twice is safe, and a log handed over on a
+memory stick can simply be dropped into the same directory alongside the pulled ones.
 """
 from __future__ import annotations
 
@@ -25,8 +29,8 @@ import json
 import pathlib
 import sys
 
-from ndex_io import (TELEMETRY_ATTR, TELEMETRY_MARK, TELEMETRY_SEGMENT, api, auth,
-                     extract_blob)
+from ndex_io import (REPORT_ATTR, REPORT_MARK, REPORT_SEGMENT, TELEMETRY_ATTR,
+                     TELEMETRY_MARK, TELEMETRY_SEGMENT, api, auth, extract_blob)
 
 ADMIN_USER, ADMIN_TOK = auth("ADMIN")
 
@@ -65,33 +69,41 @@ def main(argv=None):
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    reports_dir = out / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
     nets = granted_networks()
     # The name segment is the cheap filter, applied to the summary already in hand; the mark
-    # is the guarantee, checked after the download. A log named oddly is still collected.
-    candidates = [n for n in nets if TELEMETRY_SEGMENT in n["name"]]
-    others = [n for n in nets if TELEMETRY_SEGMENT not in n["name"]]
-    print(f"{len(nets)} network(s) readable; {len(candidates)} look like event logs, "
-          f"{len(others)} are for the gate\n")
+    # is the guarantee, checked after the download. Something named oddly is still collected.
+    KINDS = [(TELEMETRY_SEGMENT, TELEMETRY_MARK, TELEMETRY_ATTR, "event log", out, ".jsonl"),
+             (REPORT_SEGMENT, REPORT_MARK, REPORT_ATTR, "session report", reports_dir, ".md")]
+    logs = [n for n in nets if TELEMETRY_SEGMENT in n["name"]]
+    reps = [n for n in nets if REPORT_SEGMENT in n["name"]]
+    others = [n for n in nets if n not in logs and n not in reps]
+    print(f"{len(nets)} network(s) readable; {len(logs)} event log(s), "
+          f"{len(reps)} session report(s), {len(others)} for the gate\n")
 
     pulled = skipped = 0
-    for n in candidates:
-        if args.dry_run:
-            print(f"  would pull {n['name']}  ({n['owner']})")
-            continue
-        payload, na, err = extract_blob(n["uuid"], ADMIN_TOK, attr=TELEMETRY_ATTR)
-        if err:
-            print(f"  {n['name']}: ! {err}")
-            skipped += 1
-            continue
-        if not (na or {}).get(TELEMETRY_MARK):
-            print(f"  {n['name']}: ! not marked {TELEMETRY_MARK} — leaving it for the gate")
-            skipped += 1
-            continue
-        path = out / f"{n['owner']}__{n['uuid']}.jsonl"
-        path.write_text(payload)
-        n_events = sum(1 for line in payload.splitlines() if line.strip())
-        pulled += 1
-        print(f"  {n['name']}: {n_events} event(s) -> {path.name}")
+    for seg, mark, attr, label, dest, ext in KINDS:
+        for n in [x for x in nets if seg in x["name"]]:
+            if args.dry_run:
+                print(f"  would pull {label}: {n['name']}  ({n['owner']})")
+                continue
+            payload, na, err = extract_blob(n["uuid"], ADMIN_TOK, attr=attr)
+            if err:
+                print(f"  {n['name']}: ! {err}")
+                skipped += 1
+                continue
+            if not (na or {}).get(mark):
+                print(f"  {n['name']}: ! not marked {mark} — leaving it for the gate")
+                skipped += 1
+                continue
+            path = dest / f"{n['owner']}__{n['uuid']}{ext}"
+            path.write_text(payload)
+            pulled += 1
+            size = (f"{sum(1 for l in payload.splitlines() if l.strip())} event(s)"
+                    if ext == ".jsonl" else f"{len(payload)} chars")
+            print(f"  {label}: {n['name']}: {size} -> {path.relative_to(out)}")
 
     if not args.dry_run:
         files = sorted(out.glob("*.jsonl"))
@@ -105,8 +117,10 @@ def main(argv=None):
                         total += 1
                     except json.JSONDecodeError:
                         pass
-        print(f"\n{pulled} pulled, {skipped} skipped. {out}/ holds {len(files)} file(s), "
-              f"{total} event line(s), {len(seen)} distinct after de-duplication.")
+        n_reports = len(list(reports_dir.glob("*.md")))
+        print(f"\n{pulled} pulled, {skipped} skipped. {out}/ holds {len(files)} log file(s), "
+              f"{total} event line(s), {len(seen)} distinct after de-duplication; "
+              f"{n_reports} session report(s) in {reports_dir.name}/.")
         print(f"next: python metrics.py --record <gate mirror> --events {out}")
     return 0
 

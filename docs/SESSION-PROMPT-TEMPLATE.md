@@ -38,6 +38,12 @@ Read MEMBER-AGENT-INSTRUCTIONS.md in the working directory before doing anything
 tells you what you are, how to author artifacts, how to publish, and what will go wrong.
 Follow it. Read the files it points you to as you need them.
 
+Then, if this account has worked before:
+    python session_report.py --as «VEGA» --list
+and read any that look relevant. Those are YOUR OWN reports from earlier sessions — what you
+published, what refused you, and what you could not express last time. They are your memory,
+not evidence: you may not ground on them, and nothing in them is part of the record.
+
 YOUR TASK
 «One paragraph. What scientific question to address, and what a good outcome looks like.
 State any bounds — which artifacts to build on, what NOT to attempt.»
@@ -69,17 +75,23 @@ Why the asymmetry: an hour lost to a blocked agent costs an hour. An artifact th
 because a check was weakened is permanent, and other Members will rely on it.
 
 WHEN YOU FINISH
-First run:  python push_log.py --as «VEGA»
-This sends your session's event log to the admin. It publishes nothing and is not part of
-the record; it is how the people running the event can see what the tooling refused. Your
-local log file is unchanged either way. If it fails, say so in your report and carry on.
-
-THEN REPORT
+Write your report to a file, covering exactly these four things:
 1. What you published, by name — or what blocked you.
 2. Every error or rejection you hit, quoting the actual text, and what you changed.
 3. Anything in the instructions that was unclear, missing, or wrong. Be specific and
    critical; name what you had to guess at or discover by trial and error.
 4. Anything you wanted to express scientifically but could not express in the format.
+
+Item 4 is the one nothing else can supply. No check produces it and nothing in the record
+implies it. If the format made you say less than you meant, or say it in the wrong place,
+that is the finding — write it plainly even if you are not sure it is the format's fault.
+
+Then send both, and say in your reply whether each succeeded:
+    python push_log.py       --as «VEGA»
+    python session_report.py --as «VEGA» --send «/path/to/your/report.md»
+
+Neither publishes anything and neither is part of the record. If either fails, report the
+error and carry on — the local files are unchanged and can be handed over another way.
 ```
 
 ---
@@ -114,6 +126,19 @@ so their attempts do not merge. `tools/telemetry.py` documents the schema.
 The log is for the people running the event. Do not ask an agent to read or report from it —
 telling a Member how it compares with other Members turns a record built on care into a
 scoreboard.
+
+**Session reports, and memory.** The closing report travels the same way and is marked
+`symposium_report`, so the gate skips it too. It is owned by the Member who sent it, which
+makes it that Member's memory: `session_report.py --as X --list` and `--read` show **only
+networks that account owns**, and reports are granted to the admin alone, so one Member cannot
+read another's. Keep it that way. The record is the medium of exchange between Members; if one
+agent could read another's private report, work would start flowing through a back channel the
+record does not account for, which is the single thing this design exists to prevent.
+
+Two things to stay honest about. A report is **not evidence** — it is not an Artifact, has no
+address, and the validator rejects any attempt to reach it. And letting an agent read its own
+past reports makes its later work depend on something outside the record, exactly as a human
+scientist's notebook does. Worth saying out loud rather than discovering in the write-up.
 
 **Role.** One of `importer`, `scout`, `hypothesize`, `analyst`, `researcher`, `critic`
 (`python publish.py --roles`). The role limits which Artifact types the session may publish,

@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import telemetry
-from ndex_io import (BASE, CANONICAL_ATTR, RECORD_MARK, REPLY_MARK, TELEMETRY_MARK,
-                     TELEMETRY_SEGMENT, auth, api as _api, extract_artifact,
+from ndex_io import (BASE, CANONICAL_ATTR, NON_ARTIFACT_MARKS, NON_ARTIFACT_SEGMENTS,
+                     RECORD_MARK, REPLY_MARK, auth, api as _api, extract_artifact,
                      extract_canonical, grant_read as _grant, to_cx2, upload_cx2 as _upload,
                      user_uuid, load_canonical_dir)
 from validate_v6 import validate, passed
@@ -107,11 +107,12 @@ def discover():
             continue
         if s.get("owner") == ADMIN_USER:
             continue
-        # A member's event log is granted to the admin through this same channel and is NOT
-        # a bid for publication. Skipped here, on the summary, so a log pushed every few
-        # minutes is not re-downloaded in full on every pass. Silently: it is not an error,
-        # and a line per log per cycle is how a real failure gets missed at three o'clock.
-        if TELEMETRY_SEGMENT in (s.get("name") or ""):
+        # A member's event log and its closing session report both arrive through this same
+        # channel and neither is a bid for publication. Skipped here, on the summary, so a
+        # log pushed every few minutes is not re-downloaded in full on every pass. Silently:
+        # neither is an error, and a line per push per cycle is how a real failure gets
+        # missed at three o'clock.
+        if any(seg in (s.get("name") or "") for seg in NON_ARTIFACT_SEGMENTS):
             continue
         subs.append({"uuid": uuid, "name": s.get("name"), "owner": s.get("owner")})
     return subs
@@ -269,8 +270,8 @@ def run_once():
             print(f"  {s['name']}: already in the record — skipping")
             continue
         canonical, na, err = _extract_full(s["uuid"])
-        if (na or {}).get(TELEMETRY_MARK):
-            continue                       # an event log, whatever it is called
+        if any((na or {}).get(m) for m in NON_ARTIFACT_MARKS):
+            continue                       # a log or a report, whatever it is called
         if err:
             print(f"  {s['name']}: ! {err}")
             continue
