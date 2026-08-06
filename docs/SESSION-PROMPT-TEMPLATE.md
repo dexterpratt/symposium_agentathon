@@ -81,8 +81,21 @@ WHEN YOU FINISH, REPORT
 ## Filling the slots
 
 **Mirror and log paths.** Give each session its own mirror directory. Two sessions sharing one
-mirror will race on `sync.py`'s state file. The log path is where role/outcome telemetry
-accumulates — point every session at the same one if you want a single record of the day.
+mirror will race on `sync.py`'s state file.
+
+**Point every session — and the gate — at the SAME `SYMPOSIUM_LOG`.** This is not optional
+bookkeeping. The record holds only what succeeded, so the log is the only place that records
+what was attempted and refused, what the refusal said, and how many rounds an artifact took
+to become publishable. None of it can be reconstructed afterwards. `tools/telemetry.py`
+documents the schema.
+
+Sessions are keyed in the log by account, role, and mirror directory. If you run two sessions
+of one account in the same role, give them distinct `SYMPOSIUM_SESSION` values so their
+attempts do not merge.
+
+The log is for the people running the event. Do not ask an agent to read or report from it —
+telling a Member how it compares with other Members turns a record built on care into a
+scoreboard.
 
 **Role.** One of `importer`, `scout`, `hypothesize`, `analyst`, `researcher`, `critic`
 (`python publish.py --roles`). The role limits which Artifact types the session may publish,

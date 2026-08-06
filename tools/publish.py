@@ -31,6 +31,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import telemetry
 from ndex_io import (auth, whoami, user_uuid, grant_read, to_cx2, upload_cx2,
                      load_canonical_dir)
 from validate_v6 import validate, passed, parse_instant
@@ -38,7 +39,6 @@ from validate_v6 import validate, passed, parse_instant
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
 ADMIN = os.environ.get("SYMPOSIUM_ADMIN", "ndex-admin")
 ROLES_PATH = Path(__file__).parent / "roles.json"
-LOG = Path(os.environ.get("SYMPOSIUM_LOG", "./publish_log.jsonl"))
 
 
 def load_roles():
@@ -48,19 +48,6 @@ def load_roles():
     except Exception as e:
         print(f"! cannot read {ROLES_PATH}: {e}")
         return {}
-
-
-def log_event(**kw):
-    """Session telemetry: who, in what role, published what, and how it went.
-
-    Deliberately NOT in the artifact — role is governance, and the specification keeps
-    governance out of the record. This local log is the measurement substrate instead."""
-    try:
-        with LOG.open("a") as fh:
-            fh.write(json.dumps(dict(
-                at=datetime.now(timezone.utc).isoformat(timespec="seconds"), **kw)) + "\n")
-    except Exception:
-        pass
 
 
 def load_record():
@@ -154,19 +141,26 @@ def main(argv):
     for i, a in enumerate(arts, start=1):
         a["artifact"]["created"] = (base + timedelta(seconds=i)).isoformat(timespec="seconds")
 
+    # Three refusals that must not be pooled: the naming rule and the role limit are this
+    # tool declining, the validator is the SPECIFICATION declining. Only the last says
+    # anything about whether v6 is workable, so the log keeps them apart.
     fatal = False
+    verdicts = {}
     for a in arts:
         h = a["artifact"]
         name = h.get("name", "<unnamed>")
+        kinds = set()
         if not str(name).startswith(f"{account}_"):
             print(f"  {name}: FAIL  name must be prefixed '{account}_' (profile naming rule)")
             fatal = True
+            kinds.add("naming")
         if allowed is not None and h.get("type") not in allowed:
             print(f"  {name}: FAIL  role '{role}' may not publish a {h.get('type')} "
                   f"(allowed: {', '.join(sorted(allowed))})")
             for line in roles[role].get("must_not", []):
                 print(f"           {line}")
             fatal = True
+            kinds.add("role")
         # one session holds one role, so the role segment partitions the namespace and keeps
         # two concurrent sessions of the same Member from colliding on a name
         if role and f"_{role}_" not in str(name):
@@ -179,7 +173,10 @@ def main(argv):
         print(f"  {name}: spec {'ok' if ok else 'FAIL'}")
         for x in findings:
             print(f"      [{x['level']:6} {x['check']:9}] {x['msg']}")
+        if not ok:
+            kinds.add("spec")
         fatal = fatal or not ok
+        verdicts[id(a)] = (name, h.get("type"), findings, kinds)
 
     # An Analysis whose outputs are neither in this submission nor already in the record will
     # sit DEFERRED at the gate rather than being accepted — say so now, not after a poll cycle.
@@ -195,10 +192,16 @@ def main(argv):
                   f"{', '.join(missing)}\n        the gate will DEFER the whole act until they "
                   f"arrive (spec 1.8) — publish them together")
 
+    # Every attempt is logged, passing ones included: the question this answers is how many
+    # rounds an artifact took to become publishable, and that is uncountable if only the
+    # failures are recorded.
+    action = "check" if check_only else "publish"
+    for a in arts:
+        name, atype, findings, kinds = verdicts[id(a)]
+        telemetry.emit(account, action, "refused" if kinds else "passed",
+                       artifact=name, atype=atype, role=role,
+                       findings=findings, refusal=kinds)
     if fatal:
-        for a in arts:
-            log_event(member=account, role=role, artifact=a["artifact"].get("name"),
-                      type=a["artifact"].get("type"), outcome="refused_locally")
         print("\nnothing uploaded — fix the failures above and retry")
         return 1
     if check_only:
@@ -224,8 +227,9 @@ def main(argv):
             print(f"  {name}: uploaded {uuid} but the READ grant to {ADMIN} FAILED — "
                   f"the gate cannot see it. Grant it manually or delete and retry.")
             return 1
-        log_event(member=account, role=role, artifact=name,
-                  type=a["artifact"].get("type"), outcome="submitted", network=uuid)
+        telemetry.emit(account, "publish", "submitted", artifact=name,
+                       atype=a["artifact"].get("type"), role=role,
+                       findings=verdicts[id(a)][2], network=uuid)
         print(f"  {name}: submitted  {uuid}  (READ granted to {ADMIN})")
 
     print(f"\n{len(arts)} artifact(s) submitted. The gate stamps `created` on acceptance and "

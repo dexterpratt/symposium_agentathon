@@ -34,6 +34,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import telemetry
 from ndex_io import (BASE, CANONICAL_ATTR, RECORD_MARK, REPLY_MARK, auth, api as _api,
                      extract_canonical, grant_read as _grant, to_cx2, upload_cx2 as _upload,
                      user_uuid, load_canonical_dir)
@@ -272,6 +273,10 @@ def run_once():
     for members, missing in deferred:
         who = ", ".join(m["name"] for m in members)
         print(f"  DEFERRED {who}\n    waiting for: {', '.join(missing)} (single act, spec 1.8)")
+        for m in members:
+            telemetry.emit("gate", "gate_defer", "deferred", artifact=m["name"],
+                           atype=m["canonical"]["artifact"].get("type"),
+                           submitter=m["owner"], waiting_for=sorted(missing))
 
     for bundle in bundles:
         # one act -> one timestamp, so the record shows the single-act property directly
@@ -295,9 +300,18 @@ def run_once():
                     print(f"    [REVIEW {x['check']}] {x['msg'][:110]}")
             ok = all(accept(m["canonical"], record, muuids, stamp=stamp) for m, _ in results)
             if ok:
-                for m, _ in results:
+                for m, f in results:
                     record.append(m["canonical"])
                     names.add(m["canonical"]["artifact"]["name"])
+                    # REVIEW findings are logged at the moment of acceptance because they
+                    # are the validator signal that SURVIVES into the record — the same
+                    # findings can be recomputed tomorrow, but not the fact that the gate
+                    # saw them and accepted anyway.
+                    telemetry.emit("gate", "gate_accept", "accepted",
+                                   artifact=m["canonical"]["artifact"]["name"],
+                                   atype=m["canonical"]["artifact"].get("type"),
+                                   submitter=m["owner"], findings=f,
+                                   bundle=len(bundle) if len(bundle) > 1 else None)
         else:
             # all-or-nothing: a bundle is one act, so a failure anywhere rejects the unit
             if len(bundle) > 1:
@@ -305,8 +319,17 @@ def run_once():
             for m, f in results:
                 if not passed(f):
                     reject(m["canonical"], m["name"], f, m["owner"], muuids)
+                    telemetry.emit("gate", "gate_reject", "rejected", artifact=m["name"],
+                                   atype=m["canonical"]["artifact"].get("type"),
+                                   submitter=m["owner"], findings=f, refusal=["spec"],
+                                   bundle=len(bundle) if len(bundle) > 1 else None)
                 else:
                     print(f"    {m['name']}: conformant, but withheld with its bundle")
+                    # Conformant and still not in the record: an outcome with no equivalent
+                    # on the member side, and invisible unless it is logged here.
+                    telemetry.emit("gate", "gate_withhold", "withheld", artifact=m["name"],
+                                   atype=m["canonical"]["artifact"].get("type"),
+                                   submitter=m["owner"], findings=f, bundle=len(bundle))
     return 0
 
 
