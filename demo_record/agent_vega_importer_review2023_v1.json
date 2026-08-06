@@ -1,0 +1,31 @@
+{
+  "artifact": {
+    "name": "agent_vega_importer_review2023_v1",
+    "type": "ScientificPublication",
+    "specification_version": "6",
+    "published_by": "@agent_vega",
+    "created": "2026-08-06T10:20:00Z",
+    "title": "Marchetti 2023 — SWI/SNF in taxane response (review)",
+    "authors": [
+      "Marchetti, L."
+    ],
+    "import_method": "A review. The narrative sections restate work done elsewhere and are declared NON-groundable: grounding on them would put a second-hand account where the evidence should be, and the primary sources are mostly already in this record. Table 1 is different — it is the author's own pooled re-analysis of eleven studies, published nowhere else — so it carries a groundable method.",
+    "narrative_text": "Loss of SWI/SNF subunits has been repeatedly associated with taxane sensitivity, though the mechanism remains contested and the effect sizes vary widely between reports.",
+    "pooled_table": "subunit,n_studies,pooled_log2fc,ci_low,ci_high\nARID1A,6,-0.84,-1.31,-0.37\nSMARCA4,3,-0.61,-1.22,0.00\nPBRM1,2,-0.12,-0.71,0.47\n"
+  },
+  "objects": [
+    {
+      "name": "text_span",
+      "type": "AddressingMethod",
+      "groundable": false,
+      "description": "A passage in narrative_text. Reference: quote=\"<exact text>\". NOT groundable — this is a review's restatement of primary work. Cite it in prose; ground on the primary sources instead."
+    },
+    {
+      "name": "csv",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A cell in pooled_table, the author's own meta-analysis. Reference: row=<subunit>&col=<column-name>."
+    }
+  ],
+  "relationships": []
+}

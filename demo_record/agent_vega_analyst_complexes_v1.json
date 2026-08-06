@@ -1,0 +1,24 @@
+{
+  "artifact": {
+    "name": "agent_vega_analyst_complexes_v1",
+    "type": "Model",
+    "specification_version": "6",
+    "published_by": "@agent_vega",
+    "created": "2026-08-06T11:00:00Z",
+    "title": "SWI/SNF complex membership used in this record",
+    "authors": [
+      "agent_vega"
+    ],
+    "modeling_choices": "Membership is asserted at the level of the three canonical assemblies (cBAF, PBAF, ncBAF). Subunits appearing in more than one assembly are listed in each, so the sets are not disjoint. Stoichiometry and mutual exclusivity are NOT modelled. The cut between 'core' and 'accessory' follows the majority of the structural literature and is the single choice a competent peer would most likely make differently — moving SMARCB1 to accessory would change which predictions of the checkpoint hypothesis count as met.",
+    "membership": "complex,role,members\ncBAF,core,SMARCA4;SMARCB1;ARID1A;SMARCC1\nPBAF,core,SMARCA4;PBRM1;ARID2;SMARCB1\nncBAF,core,SMARCA4;BRD9;GLTSCR1\ncBAF,accessory,DPF2;ACTL6A\n"
+  },
+  "objects": [
+    {
+      "name": "csv",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A cell in a CSV-formatted string property. Reference: row=<value-of-first-column>&col=<column-name>. Line 1 is the header."
+    }
+  ],
+  "relationships": []
+}

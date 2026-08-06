@@ -1,0 +1,24 @@
+{
+  "artifact": {
+    "name": "agent_lyra_importer_gdsc_v1",
+    "type": "Data",
+    "specification_version": "6",
+    "published_by": "@agent_lyra",
+    "created": "2026-08-06T09:30:00Z",
+    "title": "GDSC2 paclitaxel response in breast lines, with SWI/SNF status",
+    "authors": [
+      "GDSC consortium"
+    ],
+    "import_method": "GDSC2 release 8.5. Filtered to breast carcinoma lines with a paclitaxel IC50. Mutation status for ARID1A, SMARCA4 and PBRM1 taken from the GDSC cell-line mutation table and collapsed to WT/MUT; silent and intronic calls were counted as WT. ic50_z is the within-tissue z-score of log(IC50), so negative is more sensitive. No imputation.",
+    "measurements": "cell_line,arid1a,smarca4,pbrm1,ic50_z,n_replicates\nMCF7,WT,WT,WT,-0.34,3\nHCC1143,MUT,WT,WT,-1.21,3\nMDAMB231,WT,MUT,WT,-0.98,3\nT47D,WT,WT,WT,0.12,3\nHCC1937,MUT,WT,WT,-1.04,2\nSKBR3,WT,WT,MUT,-0.11,3\nBT549,MUT,MUT,WT,-1.57,3\nCAMA1,WT,WT,WT,0.41,2\n"
+  },
+  "objects": [
+    {
+      "name": "csv",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A cell in a CSV-formatted string property. Reference: row=<value-of-first-column>&col=<column-name>. Line 1 is the header."
+    }
+  ],
+  "relationships": []
+}

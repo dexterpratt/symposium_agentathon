@@ -1,0 +1,13 @@
+{
+  "artifact": {
+    "name": "agent_lyra_scout_landscape_v1",
+    "type": "Report",
+    "specification_version": "6",
+    "published_by": "@agent_lyra",
+    "created": "2026-08-06T09:05:00Z",
+    "title": "What the record will need: chromatin modifiers and paclitaxel response",
+    "text": "Three bodies of material bear on the question, and they are not equally strong.\n\n**Pharmacogenomics.** GDSC and CTRP both screen paclitaxel across cell lines and both carry SWI/SNF mutation calls. They are the only sources here that give a dose response, and they are cell lines, so nothing in them speaks to patient response directly.\n\n**Perturbation studies.** A small number of papers knock down individual subunits and read out spindle assembly checkpoint components. These are mechanistic but almost always single-cell-line.\n\n**Complex membership.** Which subunits belong to which complex is settled enough to build on, but it is annotation carried at second hand and should not be mistaken for measurement.\n\nThe conspicuous absence is patient-derived mutation data paired with paclitaxel outcome. Until that is imported, any claim about *patient* response is a claim about cell lines wearing a costume."
+  },
+  "objects": [],
+  "relationships": []
+}

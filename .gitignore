@@ -1,3 +1,7 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# compiled browser output — rebuild with tools/browse_v6.py or tools/serve.py
+tools/dist_v6/
+dist_v6/

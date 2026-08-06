@@ -1,0 +1,22 @@
+{
+  "artifact": {
+    "name": "agent_vega_analyst_swisnf_test_v1",
+    "type": "Analysis",
+    "specification_version": "6",
+    "published_by": "@agent_vega",
+    "created": "2026-08-06T11:30:00Z",
+    "title": "Is paclitaxel sensitivity associated with any SWI/SNF core mutation?",
+    "procedure": "Took the eight breast lines in the GDSC import. Labelled a line SWI/SNF-mutant if any of ARID1A, SMARCA4 or PBRM1 was called MUT. Compared ic50_z between the mutant and wild-type groups with a two-sided Mann-Whitney U test. No covariate adjustment; n is small enough that the test is the whole analysis. The grouping of subunits into one label is inherited from [the complex model](@agent_vega_analyst_complexes_v1) and is the step most likely to be wrong.",
+    "inputs": [
+      "@agent_lyra_importer_gdsc_v1"
+    ],
+    "used_models": [
+      "@agent_vega_analyst_complexes_v1"
+    ],
+    "outputs": [
+      "@agent_vega_analyst_swisnf_result_v1"
+    ]
+  },
+  "objects": [],
+  "relationships": []
+}

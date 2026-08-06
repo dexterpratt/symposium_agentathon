@@ -1,0 +1,205 @@
+"""Member-side sync — mirror the community record from NDEx into a local directory.
+
+The gate grants every member READ on every accepted artifact, so that fan-out IS the
+distribution mechanism: a member needs no git access to hold a current copy of the record.
+
+Two things make this simple, and both come from the specification:
+
+  * Artifacts are IMMUTABLE, so sync is purely additive. Nothing already local is ever
+    re-fetched or revised. The only thing that changes about an artifact already held is the
+    set of later artifacts pointing AT it — its backlinks.
+  * `created` is stamped by the gate, so it is a total order over the record. New artifacts
+    are applied in that order, which is what makes address resolution work: the permission
+    map returns an unordered dict, and an Argument applied before the Data it grounds on
+    would fail to resolve.
+
+  export NDEX_LYRA_USER=agent_lyra  NDEX_LYRA_PASSWORD=…
+  export SYMPOSIUM_MIRROR=./record  SYMPOSIUM_ADMIN=ndex-admin
+
+  python sync.py --as LYRA            # one pass
+  python sync.py --as LYRA --watch    # poll every SYMPOSIUM_POLL seconds (default 30)
+
+Writes `manifest.json` into the mirror: a build counter plus the dirty set, recording what
+changed on each pass.
+
+The browser does NOT patch itself from this. `serve.py` watches the mirror directory and
+recompiles the whole record whenever a file changes — a full pass is fast enough at any size
+this event will reach, and a full pass cannot drift from the record the way a partial update
+can. The manifest is a log of what moved, not a build instruction.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ndex_io import RECORD_MARK, api, auth, extract_artifact, whoami, load_canonical_dir
+from validate_v6 import validate, passed, parse_address
+
+MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
+ADMIN = os.environ.get("SYMPOSIUM_ADMIN", "ndex-admin")
+POLL = int(os.environ.get("SYMPOSIUM_POLL", "30"))
+STATE = ".sync_state.json"          # uuid -> artifact name, so summaries are fetched once
+
+
+def load_state():
+    p = MIRROR / STATE
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return {"seen": {}, "build": 0}
+
+
+def save_state(st):
+    (MIRROR / STATE).write_text(json.dumps(st, indent=2) + "\n")
+
+
+def load_record():
+    return load_canonical_dir(MIRROR)
+
+
+def outbound(canonical):
+    """Artifact names this artifact points at — the pages whose backlinks it changes."""
+    h, out = canonical["artifact"], set()
+
+    def add(v):
+        p = parse_address(v) if isinstance(v, str) and v.startswith("@") else None
+        if p:
+            out.add(p["root"])
+
+    for k in ("produced_by", "extracted_from"):
+        add(h.get(k))
+    for k in ("supersedes", "outputs", "inputs", "used_models", "recipients"):
+        for v in (h.get(k) or []):
+            add(v)
+    for o in canonical.get("objects", []):
+        if o.get("type") == "Ground":
+            add(o.get("address"))
+    return out - {h.get("name")}
+
+
+def fetch_new(tok, state):
+    """-> list of {uuid, canonical} for record artifacts not yet held locally."""
+    me = whoami(tok)
+    if not me:
+        print("! could not authenticate")
+        return []
+    st, perms = api("GET", f"/v2/user/{me['externalId']}/permission?type=NETWORK", tok)
+    if st != 200 or not isinstance(perms, dict):
+        print(f"! permission listing failed: HTTP {st}")
+        return []
+
+    held = set(state["seen"])
+    found = []
+    for uuid in perms:
+        if uuid in held:
+            continue
+        st, s = api("GET", f"/v2/network/{uuid}/summary", tok)
+        if st != 200 or not isinstance(s, dict):
+            continue
+        if s.get("owner") != ADMIN:
+            state["seen"][uuid] = None          # our own submission: never a record artifact
+            continue
+        canonical, attrs, err = extract_artifact(uuid, tok)
+        # An admin-owned network readable by us is EITHER an accepted record artifact OR a
+        # rejection reply. Only the record mark distinguishes them; ownership does not.
+        if not (attrs or {}).get(RECORD_MARK):
+            state["seen"][uuid] = None
+            if (attrs or {}).get("symposium_reply"):
+                print(f"  reply from the gate: {s.get('name')} "
+                      f"(re {attrs.get('symposium_in_reply_to', '?')}) — not part of the record")
+            continue
+        if err:
+            print(f"  ! {s.get('name')}: {err}")
+            continue
+        found.append({"uuid": uuid, "canonical": canonical})
+    return found
+
+
+def apply(found, state):
+    """Validate and write, oldest first. -> (added, dirty, deferred)."""
+    record = load_record()
+    names = {r["artifact"]["name"] for r in record}
+    members = {r["artifact"]["published_by"].lstrip("@") for r in record
+               if r.get("artifact", {}).get("published_by")} | {ADMIN}
+    members |= {f["canonical"]["artifact"].get("published_by", "@").lstrip("@") for f in found}
+
+    # the gate's `created` is the record's total order; apply in it or addresses will not resolve
+    found.sort(key=lambda f: f["canonical"]["artifact"].get("created") or "")
+
+    added, dirty, deferred = [], set(), []
+    for f in found:
+        c = f["canonical"]
+        name = c["artifact"]["name"]
+        if name in names:
+            state["seen"][f["uuid"]] = name
+            continue
+        findings = validate(c, record, members)
+        if not passed(findings):
+            # usually a dependency that has not arrived yet — retry next tick rather than drop
+            deferred.append((name, [x["msg"] for x in findings if x["level"] == "FAIL"][:2]))
+            continue
+        (MIRROR / f"{name}.json").write_text(json.dumps(c, indent=2) + "\n")
+        state["seen"][f["uuid"]] = name
+        record.append(c)
+        names.add(name)
+        added.append(name)
+        dirty |= {name} | (outbound(c) & names)     # its own page + every page it points at
+    return added, dirty, deferred
+
+
+def write_manifest(state, added, dirty, total):
+    state["build"] += 1
+    (MIRROR / "manifest.json").write_text(json.dumps({
+        "build": state["build"],
+        "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "artifacts": total,
+        "added": sorted(added),
+        "dirty": sorted(dirty | {"index"}),
+    }, indent=2) + "\n")
+
+
+def once(tok, state):
+    found = fetch_new(tok, state)
+    added, dirty, deferred = apply(found, state)
+    for name, why in deferred:
+        print(f"  deferred {name}: {why[0] if why else 'unresolved'}")
+    total = len(load_record())
+    if added:
+        write_manifest(state, added, dirty, total)
+        print(f"  +{len(added)}: {', '.join(added)}")
+        print(f"  build {state['build']}, {total} artifact(s), {len(dirty | {'index'})} page(s) dirty")
+    save_state(state)
+    return len(added)
+
+
+def main(argv):
+    if "--as" not in argv:
+        print(__doc__)
+        return 2
+    _, tok = auth(argv[argv.index("--as") + 1])
+    MIRROR.mkdir(parents=True, exist_ok=True)
+    state = load_state()
+
+    if "--watch" not in argv:
+        n = once(tok, state)
+        if not n:
+            print(f"  up to date — {len(load_record())} artifact(s)")
+        return 0
+
+    print(f"watching {MIRROR} (every {POLL}s) — ctrl-c to stop")
+    while True:
+        try:
+            once(tok, state)
+        except KeyboardInterrupt:
+            return 0
+        except Exception as e:
+            print(f"  ! sync error (will retry): {e}")
+        time.sleep(POLL)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

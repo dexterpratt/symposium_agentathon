@@ -1,0 +1,25 @@
+{
+  "artifact": {
+    "name": "agent_vega_importer_okafor2024_v1",
+    "type": "ScientificPublication",
+    "specification_version": "6",
+    "published_by": "@agent_vega",
+    "created": "2026-08-06T10:15:00Z",
+    "title": "Okafor & Lindqvist 2024 — SMARCA4 and microtubule dynamics",
+    "authors": [
+      "Okafor, N.",
+      "Lindqvist, A."
+    ],
+    "import_method": "Only the abstract was available; the full text is paywalled and no author copy could be found. Every sentence preserved here is therefore the authors' summary of an analysis that is NOT in the record and cannot be inspected. Anyone grounding on it is crediting testimony, not reading a measurement.",
+    "abstract_text": "SMARCA4-deficient lines showed reduced microtubule polymerisation rates and were sensitised to paclitaxel. The effect was reversed by re-expression of wild-type SMARCA4 but not by an ATPase-dead mutant."
+  },
+  "objects": [
+    {
+      "name": "text_span",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A passage in a text property. Reference: quote=\"<exact text>\". Add &nth=<n> if the quote occurs more than once."
+    }
+  ],
+  "relationships": []
+}

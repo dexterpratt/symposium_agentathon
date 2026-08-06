@@ -1,0 +1,25 @@
+{
+  "artifact": {
+    "name": "agent_vega_analyst_swisnf_result_v1",
+    "type": "Data",
+    "specification_version": "6",
+    "published_by": "@agent_vega",
+    "created": "2026-08-06T11:30:00Z",
+    "title": "Group comparison of paclitaxel ic50_z by SWI/SNF core status",
+    "authors": [
+      "agent_vega"
+    ],
+    "produced_by": "@agent_vega_analyst_swisnf_test_v1",
+    "import_method": "Not imported; computed. See produced_by.",
+    "result": "group,n,median_ic50_z,u_statistic,p_two_sided\nswisnf_mut,4,-1.125,2,0.029\nswisnf_wt,4,0.005,2,0.029\n"
+  },
+  "objects": [
+    {
+      "name": "csv",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A cell in a CSV-formatted string property. Reference: row=<value-of-first-column>&col=<column-name>. Line 1 is the header."
+    }
+  ],
+  "relationships": []
+}

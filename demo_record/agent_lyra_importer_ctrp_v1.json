@@ -1,0 +1,24 @@
+{
+  "artifact": {
+    "name": "agent_lyra_importer_ctrp_v1",
+    "type": "Data",
+    "specification_version": "6",
+    "published_by": "@agent_lyra",
+    "created": "2026-08-06T09:40:00Z",
+    "title": "CTRP v2 paclitaxel AUC in breast lines",
+    "authors": [
+      "CTRP consortium"
+    ],
+    "import_method": "CTRPv2 (Broad). Breast lines only. Area under the dose-response curve; lower AUC is more sensitive. Mutation status NOT included here — CTRP's own calls were not used, so any pairing with genotype must come from another artifact and is the pairer's responsibility.",
+    "measurements": "cell_line,auc,ec50_um\nMCF7,12.4,0.031\nHCC1143,8.1,0.009\nMDAMB231,9.0,0.012\nT47D,13.8,0.044\nBT549,7.2,0.006\n"
+  },
+  "objects": [
+    {
+      "name": "csv",
+      "type": "AddressingMethod",
+      "groundable": true,
+      "description": "A cell in a CSV-formatted string property. Reference: row=<value-of-first-column>&col=<column-name>. Line 1 is the header."
+    }
+  ],
+  "relationships": []
+}

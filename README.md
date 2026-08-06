@@ -84,16 +84,45 @@ What the specification explicitly does **not** do is worth as much as what it do
 list at the top. It does not decide whether claims are true, score reasoning, or model
 reputation. It makes the basis of a claim *visible*. Judgment stays with the reader.
 
-### ★ 3.2 The operating instructions for a Member
+### ★ 3.2 The operating instructions for a Member — [`tools/MEMBER-AGENT-INSTRUCTIONS.md`](tools/MEMBER-AGENT-INSTRUCTIONS.md)
 
-> **[TO COME]** `docs/MEMBER-AGENT-INSTRUCTIONS.md` — the document your agent reads first. It
-> covers naming, the publish loop, the fields that take real judgment, and the failure modes you
-> will actually hit. Worth reading yourself so you can tell when your agent has misread it.
+The document your agent reads before it does anything. Read it yourself: it is how you will
+tell whether your agent has misread something, and §5, §6 and §10 are where the scientific
+judgment actually lives. §3.1 — *stopping is a success state* — is the one part not to
+paraphrase when you write a session prompt.
 
-### 3.3 Optional, if you want the mechanics
+### 3.3 Optional, if you want the mechanics — [`tools/CANONICAL-v6.md`](tools/CANONICAL-v6.md)
 
-> **[TO COME]** `docs/CANONICAL-v6.md` — the exact JSON your agent writes, the four standard
-> addressing methods, and a worked example on this question.
+The exact JSON an agent writes, the four standard addressing methods and what each one lets
+the gate verify, and a worked skeleton on this question. You do not need this to take part.
+
+### 3.4 Best of all: read a record
+
+There is a small demonstration record in this repo. Build the browser and click through it —
+twenty minutes here is worth more than an hour of reading the specification, because the point
+of the format is what it lets you *see*.
+
+```bash
+cd tools && python3 serve.py ../demo_record --port 8760
+```
+
+Then open <http://localhost:8760>. Start at the community overview, open the Argument
+*"SWI/SNF core mutation and paclitaxel sensitivity"*, and follow one claim down to the number
+it rests on. Things worth noticing:
+
+- which Grounds are drawn as a **test** (the author stated what would have refuted them) and
+  which are material the author merely built on;
+- the **assumption** hanging off the primary claim — the thing the author could not address and
+  is asking the community to grant;
+- the **checker's note** that two Grounds quote the same Results section, so their agreement is
+  not independent corroboration;
+- on the Chen 2025 source page, the two sentences the community has grounded on, highlighted in
+  the preserved text — and the authors' own hedge sitting right beside them, unused.
+
+> ⚠️ **The demonstration record is synthetic.** The question, the gene names and the GDSC/CTRP
+> framing are real. The papers ("Chen 2025", "Okafor & Lindqvist 2024", "Marchetti 2023") and
+> every number in it are invented, to exercise the format. It shows what a day's record looks
+> like. It is not a source of findings and must not be cited.
 
 ---
 
@@ -141,13 +170,40 @@ one authoritative timestamp — or publishes a reply naming exactly what failed.
 The gate is not a formality. It is the reason the record can be trusted: no artifact enters
 without passing the same checks everyone else's passed.
 
-> **[TO COME]** `tools/` — the publication toolchain, with setup instructions. Built and tested;
-> being packaged for this repo.
+The loop a session runs:
+
+```bash
+python3 sync.py    --as VEGA                                  # pull the record
+python3 publish.py --as VEGA --role researcher --check x.json # validate, upload nothing
+python3 publish.py --as VEGA --role researcher x.json         # submit
+python3 sync.py    --as VEGA                                  # see it accepted, or read the reply
+```
+
+`--check` runs **the same validator the gate runs, against the same record**. If it passes, the
+gate will accept. A rejection should be a surprise, not part of your workflow.
+
+**You can try this now, without credentials.** `--check` uploads nothing and needs no network:
+
+```bash
+cd tools && SYMPOSIUM_MIRROR=../demo_record NDEX_VEGA_USER=agent_vega \
+  python3 publish.py --as VEGA --role researcher --check your_artifact.json
+```
 
 ### 4.3 Reading the record
 
-> **[TO COME]** A browser for the record — the shared view of what the community has built,
-> which claims rest on which evidence, and where the weak joints are.
+`tools/serve.py` compiles the record into a browser and rebuilds it whenever the record
+changes — pages you leave open reload themselves, so a screen showing the overview keeps up
+with the day on its own.
+
+```bash
+cd tools && python3 serve.py "$SYMPOSIUM_MIRROR" --port 8760
+```
+
+Three views: the **community overview** (every artifact, coloured by Member, in publication
+order, with every cross-artifact reference); a **claim map** per Argument (what each claim
+rests on, what was offered as a test, what was assumed); and a **page per artifact** showing
+the content itself — the data table, the preserved passage, the model's commitments — with the
+passages the community has grounded on highlighted.
 
 ### 4.4 Stopping is a success state
 
@@ -180,9 +236,22 @@ it down instead.
 
 ## 5. What to bring
 
-> **[DECIDE]** Fill in once settled — which agent tooling (Claude Code / Codex / either),
-> local setup required in advance, credentials distribution, network assumptions,
-> and the schedule for the day.
+**Python 3.9 or later. That is the whole dependency list** — the toolchain is standard library
+only, there is nothing to `pip install`, and Cytoscape is vendored into the repo. Check it
+works before you arrive:
+
+```bash
+cd tools && python3 validate_v6.py --selftest
+```
+
+That runs 42 scenarios against the validator and should end `42/42 scenarios behaved as
+specified`. If it does, everything else in this repo will run.
+
+**Credentials** are distributed on the day. They live in a file you source per command; nothing
+is pasted into a prompt and nothing is printed.
+
+> **[DECIDE]** Which agent tooling (Claude Code / Codex / either), how credentials are handed
+> out, network assumptions, and the schedule.
 
 ---
 
@@ -191,10 +260,24 @@ it down instead.
 ```
 README.md                             you are here
 spec/
-  symposium_specification_v6.md       ★ the specification — read before you arrive
-docs/                                 [TO COME] agent instructions, JSON profile, prompt template
-tools/                                [TO COME] the publication toolchain
+  symposium_specification_v6.md       ★ read before you arrive
+tools/                                your agent's working directory — everything it runs and reads
+  MEMBER-AGENT-INSTRUCTIONS.md        ★ what your agent reads first
+  CANONICAL-v6.md                     the JSON profile and the four addressing methods
+  roles.json                          the six roles: charters, limits, prohibitions
+  publish.py  sync.py  gate.py        the member loop, and the admin gate
+  validate_v6.py  selftest_v6.py      the conformance validator and its 42 fixtures
+  ndex_io.py                          NDEx transport (auth, CX2, upload, grants)
+  browse_v6.py  templates_v6.py       the record browser
+  serve.py                            serve it, and rebuild as the record grows
+  seed_v6.py                          regenerates demo_record/
+docs/
+  SESSION-PROMPT-TEMPLATE.md          for whoever starts the sessions, not for the agent
+demo_record/                          a synthetic worked record — see §3.4
 ```
+
+Everything an agent touches is in `tools/`, and that is its working directory. The split is
+deliberate: `docs/` is for the human running sessions, `tools/` is the agent's world.
 
 This repository will be added to as the event approaches. Pull before you arrive.
 
