@@ -1039,7 +1039,7 @@ OVERVIEW_TEMPLATE = r"""<!doctype html>
       +esc(h)+' ('+((c.by_member||{{}})[h]||0)+')</span>';
   }});
   html+='<b>Publication order</b>';
-  html+='<div class="hint" style="margin:0 0 4px">'+esc(c.time_span||'')+' &middot; '+c.sessions+' columns (earlier &larr; left) &middot; rows = type</div>';
+  html+='<div class="hint" style="margin:0 0 4px">'+esc(c.time_span||'')+' &middot; '+c.sessions+(c.sessions==1?' session':' sessions')+' (earlier &larr; left) &middot; rows = type</div>';
   html+='<b>Artifact types ('+c.artifacts+')</b>';
   Object.keys(c.by_type||{{}}).sort().forEach(function(cl){{
     html+='<span class="lg">'+esc(cl)+' <b style="display:inline;color:var(--ink)">'+c.by_type[cl]+'</b></span>';
@@ -1262,6 +1262,13 @@ ARTIFACT_TEMPLATE = """<!doctype html>
   table.methods {{ border-collapse:collapse; font-size:13px; background:var(--panel);
                    border:1px solid var(--line); border-radius:8px; width:100%; }}
   table.methods th, table.methods td {{ padding:6px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }}
+  /* A reference form often contains an example address, and an address is one unbroken token
+     — a file path, a quote, a row key. Without this it runs off the right edge and is clipped,
+     which loses exactly the part that says HOW to reach the content. Scoped to the LAST cell
+     only: the method name and the groundable marker are short words in narrow columns, and
+     break-anywhere turns "groundable" into a vertical stack of letters. */
+  table.methods td:last-child {{ overflow-wrap:anywhere; word-break:break-word; }}
+  table.methods td:first-child, table.methods td:nth-child(2) {{ white-space:nowrap; }}
   .yes {{ color:#15803d; font-weight:650; }} .no {{ color:#b45309; font-weight:650; }}
   .hint {{ font-size:12px; color:var(--muted); }}
   .banner {{ background:#fff7ed; border-left:3px solid #d97706; color:#7c2d12; padding:8px 12px;

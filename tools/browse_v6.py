@@ -540,7 +540,19 @@ _SHAPE = {"Argument": "round-rectangle", "Report": "hexagon", "Data": "rectangle
           "ScientificPublication": "octagon", "Analysis": "diamond",
           "Model": "pentagon", "Message": "tag"}
 _SESSION_GAP = 20 * 60
-_COL_DX, _ROW_DY, _BAND_GAP = 340.0, 86.0, 54.0
+_ROW_DY, _BAND_GAP = 86.0, 54.0
+# Within one session's type band, wrap into sub-columns rather than one long stack. A bulk
+# publication — prepopulating the record, or any burst during the day — lands entirely inside
+# one session, and a 33-artifact band drawn as a single file is a vertical strip narrower than
+# a scrollbar: unreadable, and unimproved by "Fit", because there is nothing to fit across.
+# Sub-columns sit closer together than sessions do, so a session still reads as one group.
+#
+# Five, not more: the overview is a timeline read left to right, so it has to stay LANDSCAPE.
+# Wrapping at eight left the record 878 x 1462 in an 845 x 670 pane, which "Fit" solved by
+# zooming to 0.4 — everything visible, every label unreadable. Fitting is not the same as
+# being legible, and a tall graph in a wide pane cannot be both.
+_BAND_MAX_ROWS = 5
+_SUB_DX, _COL_GAP = 190.0, 150.0
 
 
 def build_overview(artifacts, index, colors, pages, findings_by):
@@ -572,11 +584,21 @@ def build_overview(artifacts, index, colors, pages, findings_by):
         occupancy[(cols[a["artifact"]["name"]], order.get(a["artifact"]["type"], 7))] += 1
     band_height = defaultdict(int)
     for (c, r), n in occupancy.items():
-        band_height[r] = max(band_height[r], n)
+        band_height[r] = max(band_height[r], min(n, _BAND_MAX_ROWS))
     band_top, y = {}, 0.0
     for r in sorted(band_height):
         band_top[r] = y
         y += band_height[r] * _ROW_DY + _BAND_GAP
+
+    # A session is as wide as its busiest band needs, so sessions never overlap however
+    # lopsided the day was.
+    sub_wide = defaultdict(int)
+    for (c, r), n in occupancy.items():
+        sub_wide[c] = max(sub_wide[c], -(-n // _BAND_MAX_ROWS))       # ceil
+    col_x, x = {}, 0.0
+    for c in sorted(set(cols.values())):
+        col_x[c] = x
+        x += max(sub_wide.get(c, 1), 1) * _SUB_DX + _COL_GAP
 
     rows = defaultdict(int)
     for a in artifacts:
@@ -603,7 +625,8 @@ def build_overview(artifacts, index, colors, pages, findings_by):
                      "groundable": False if typ in NON_GROUNDABLE_TYPES else None},
             "tooltip": f"{typ} · {owner}\n{title}"
                        + (f"\n{len(fs)} checker finding(s)" if fs else ""),
-            "_pos": {"x": c * _COL_DX, "y": band_top[r] + (rows[(c, r)] - 1) * _ROW_DY},
+            "_pos": {"x": col_x[c] + ((rows[(c, r)] - 1) // _BAND_MAX_ROWS) * _SUB_DX,
+                     "y": band_top[r] + ((rows[(c, r)] - 1) % _BAND_MAX_ROWS) * _ROW_DY},
         }})
 
     # Every edge here is DERIVED from an address in a property value — v6 stores no
