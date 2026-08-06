@@ -25,6 +25,18 @@ Credentials come from the environment; nothing is passed on the command line.
 
   python gate.py --once            one pass
   python gate.py --dry-run         validate and report; publish nothing
+  python gate.py --verify          check the mirror against the server; publish nothing
+  python gate.py --rebuild         rebuild the mirror from the server, then exit
+
+THE MIRROR IS A CACHE, NOT THE RECORD. Every accepted artifact is uploaded as an
+admin-owned network carrying its whole canonical JSON, and the account listing returns that
+JSON complete — verified against a 236 KB embedded payload. So the record travels with the
+symposium rather than with this machine, and a lost mirror is recoverable in one call.
+
+What a lost mirror WOULD cost is name uniqueness, and therefore immutability: the gate refuses
+a name already in the record by consulting the mirror, so a mirror missing artifacts will
+silently accept duplicates. That is why every run verifies the mirror against the server first
+and REFUSES TO RUN if the server holds anything the mirror does not.
 """
 from __future__ import annotations
 
@@ -131,6 +143,78 @@ def member_uuids():
         else:
             print(f"  ! cannot resolve member '{m}'")
     return out
+
+
+def server_record():
+    """Every accepted artifact, from the admin's own account. -> {name: (uuid, canonical)}
+
+    ONE listing call. Network summaries carry `properties`, and the record copies stamp the
+    whole canonical JSON into `symposium_canonical` — complete, not truncated, confirmed
+    against a 236 KB embedded table. Rejection replies live in the same account and are
+    excluded by their mark.
+
+    Search is not used and must not be: this deployment tokenises names and cannot match one
+    exactly, which is the whole reason name uniqueness never lived in a server query.
+    """
+    st, me = _api("GET", "/v2/user?valid=true", ADMIN_TOK)
+    if st != 200 or not isinstance(me, dict):
+        return None, f"cannot resolve admin account: HTTP {st}"
+    st, nets = _api("GET", f"/v2/user/{me['externalId']}/networksummary", ADMIN_TOK)
+    if st != 200 or not isinstance(nets, list):
+        return None, f"cannot list admin networks: HTTP {st}"
+    out = {}
+    for n in nets:
+        props = {p.get("predicateString"): p.get("value")
+                 for p in (n.get("properties") or [])}
+        if str(props.get(RECORD_MARK, "")).lower() != "true":
+            continue                                   # a rejection reply, or something else
+        raw = props.get(CANONICAL_ATTR)
+        if not raw:
+            continue
+        try:
+            canonical = json.loads(raw)
+        except Exception:                              # noqa: BLE001
+            continue
+        name = canonical.get("artifact", {}).get("name") or n.get("name")
+        out[name] = (n.get("externalId"), canonical)
+    return out, None
+
+
+def verify_mirror(record):
+    """-> (ok, missing, extra). Missing = on the server, absent from the mirror: the
+    dangerous direction, because the gate checks name uniqueness against the mirror."""
+    server, err = server_record()
+    if server is None:
+        print(f"  ! cannot verify the mirror against the server: {err}")
+        return None, set(), set()
+    local = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
+    missing = set(server) - local
+    extra = local - set(server)
+    return (not missing), missing, extra
+
+
+def rebuild_mirror():
+    """Write the server's record back into the mirror. Never deletes anything local."""
+    server, err = server_record()
+    if server is None:
+        print(f"! {err}")
+        return 1
+    MIRROR.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for name, (uuid, canonical) in sorted(server.items()):
+        p = MIRROR / f"{name}.json"
+        p.write_text(json.dumps(canonical, indent=2) + "\n")
+        written += 1
+    idx = MIRROR / "index.jsonl"
+    with idx.open("w") as fh:
+        for name, (uuid, canonical) in sorted(
+                server.items(), key=lambda kv: kv[1][1]["artifact"].get("created") or ""):
+            fh.write(json.dumps({"name": name,
+                                 "type": canonical["artifact"].get("type"),
+                                 "created": canonical["artifact"].get("created"),
+                                 "network": uuid}) + "\n")
+    print(f"rebuilt {MIRROR} from the server: {written} artifact(s), index.jsonl rewritten")
+    return 0
 
 
 # --------------------------------------------------------------------------- accept / reject
@@ -261,6 +345,25 @@ def run_once():
     print(f"gate: record holds {len(record)} artifact(s); members {sorted(members)}"
           + ("  [DRY RUN]" if DRY else ""))
 
+    # The mirror is how name uniqueness is enforced, so a mirror behind the server means
+    # this run could accept a name that already exists. Refuse rather than risk it: an
+    # immutable record that quietly gained a duplicate is not repairable afterwards.
+    ok, missing, extra = verify_mirror(record)
+    if ok is False:
+        print(f"  ! MIRROR IS BEHIND THE SERVER — {len(missing)} artifact(s) accepted "
+              f"previously are not in {MIRROR}:")
+        for n in sorted(missing)[:10]:
+            print(f"      {n}")
+        if len(missing) > 10:
+            print(f"      … and {len(missing) - 10} more")
+        print("  Name uniqueness is checked against the mirror, so running now could accept "
+              "a duplicate\n  name into an immutable record. Fix it first:\n"
+              "      python gate.py --rebuild")
+        return 1
+    if extra:
+        print(f"  note: {len(extra)} artifact(s) in the mirror are not on the server "
+              f"(deleted there?): {', '.join(sorted(extra)[:5])}")
+
     raw = discover()
     print(f"gate: {len(raw)} visible submission(s)\n")
 
@@ -350,4 +453,16 @@ def run_once():
 
 
 if __name__ == "__main__":
+    if "--rebuild" in sys.argv:
+        sys.exit(rebuild_mirror())
+    if "--verify" in sys.argv:
+        rec = load_record()
+        ok, missing, extra = verify_mirror(rec)
+        if ok is None:
+            sys.exit(2)
+        print(f"mirror {MIRROR}: {len(rec)} artifact(s)")
+        print(f"  missing from the mirror (on the server): {sorted(missing) or 'none'}")
+        print(f"  in the mirror only (not on the server):  {sorted(extra) or 'none'}")
+        print("OK" if ok else "MIRROR IS BEHIND THE SERVER — run: python gate.py --rebuild")
+        sys.exit(0 if ok else 1)
     sys.exit(run_once())
