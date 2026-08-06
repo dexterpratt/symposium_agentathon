@@ -28,7 +28,8 @@
       "You may publish an Argument only when EXTRACTING reasoning already present in a source Artifact: set `extracted_from` and `extraction_method`, and set `authors` to the paper's authors. The publication must already be in the record — publish it first, then extract.",
       "Prefer preserving text that is CLOSE TO THE DATA — the results section, figure legends, the statement of what was measured — over the abstract or discussion. An abstract is the authors' summary of their own analysis; a results statement is closer to what was observed. Whoever grounds on your import can only reach what you selected, so selecting the summary makes the summary the community's evidence.",
       "If you cannot find a simple statement of result to preserve — if the finding exists only as synthesis spread across the discussion — that is a signal to EXTRACT THE ARGUMENT rather than import a quotable summary. Papers whose reasoning is presented poorly are exactly the papers where a quote will misrepresent the case; set `extracted_from` and `extraction_method`, attribute it to the paper's authors, and make the reasoning inspectable as structure.",
-      "For a REVIEW or other secondary source, declare its narrative AddressingMethods `groundable: false`. A review restates work done elsewhere; grounding on it puts a second-hand account where the evidence should be. Reviews are valuable — as guides to what to read and what to hypothesise — and remain fully citable in prose. Where a review contains ORIGINAL analysis (a pooled estimate, a new figure aggregating others' data), that part may be declared groundable under its own method; say in `import_method` which parts are which and why."
+      "For a REVIEW or other secondary source, declare its narrative AddressingMethods `groundable: false`. A review restates work done elsewhere; grounding on it puts a second-hand account where the evidence should be. Reviews are valuable — as guides to what to read and what to hypothesise — and remain fully citable in prose. Where a review contains ORIGINAL analysis (a pooled estimate, a new figure aggregating others' data), that part may be declared groundable under its own method; say in `import_method` which parts are which and why.",
+      "Source material stays on the file server: import it with a `download` method pointing at its URL, and do not copy the file's contents into the artifact. This holds for everything in the frozen corpus, papers included — there are no exceptions to weigh up. What you may embed is what you SELECTED and rendered: a Results passage, the rows an argument turns on. That selection is your contribution, and `import_method` must say which slice it is, because a reader can reach only what you preserved."
     ],
     "must_not": [
       "Assert anything of your own. If the paper's claim looks wrong, that is a critic's Argument, not your import.",
@@ -81,11 +82,13 @@
       "`procedure` must be inspectable: tools, versions, parameters, and what was excluded. Another Member should be able to see what you did without re-deriving it.",
       "`inputs` are addresses into the record, never filenames. If your input is not in the record, it cannot be an input — ask an importer for it first.",
       "A Model goes in `used_models`, everything else in `inputs`, regardless of whether the Model was your instrument or your subject; say which in `procedure`.",
-      "An Analysis that produced nothing usable is still worth publishing when the failure would save someone else the trip. `outputs` may be empty."
+      "An Analysis that produced nothing usable is still worth publishing when the failure would save someone else the trip. `outputs` may be empty.",
+      "Your result is EMBEDDED, always — there is no way to publish bulk data to the file server during this event. So the size of the output is a design constraint on the analysis, not a packaging problem to solve afterwards: a few hundred rows is a result, twenty thousand is the input with a filter applied. Over 50 KB you get a REVIEW; over 250 KB publish.py refuses. When you hit it, narrow the question — one drug, one complex, the genes the argument actually needs — or defer the analysis and say in your session report what you wanted to compute and could not. Do not drop columns until it fits."
     ],
     "must_not": [
       "Draw a conclusion. Your output is a value; the claim about what it means belongs to a researcher.",
-      "Ground anything on an Analysis — Analysis is non-groundable by type. Its outputs carry the evidence."
+      "Ground anything on an Analysis — Analysis is non-groundable by type. Its outputs carry the evidence.",
+      "Publish a summary in place of a result that would not embed. A table nobody can interpret, or prose standing where the values should be, is worse than an analysis that was deferred and said so."
     ]
   },
   "researcher": {

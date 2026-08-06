@@ -270,6 +270,11 @@ REVIEW_CASES = [
      mut(lambda a: a["artifact"].update(description="See @agent_vega_plan_v1 for context.")), "CITATION"),
     ("rest grounding is accepted but reviewed",
      mut(lambda a: (obj(a, "g_csv").update(address="@agent_lyra_depmap_v1#rest.gene=ARID1A"),)), "GROUND"),
+    # Size is REVIEW and must stay REVIEW: an oversized result is a judgment about whether the
+    # analysis was focused, and a validator that FAILED on it would be ranking work by weight.
+    # The hard refusal lives in publish.py, deliberately outside the specification.
+    ("oversized embedded payload is reviewed, not failed",
+     mut(lambda a: a["artifact"].update(bulk="x" * (60 * 1024))), "SIZE"),
 ]
 
 DEPMAP = {"artifact": {"name": "agent_lyra_depmap_v1", "type": "Data", "specification_version": "6",

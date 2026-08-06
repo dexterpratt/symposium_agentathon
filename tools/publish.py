@@ -34,7 +34,8 @@ from pathlib import Path
 import telemetry
 from ndex_io import (auth, whoami, user_uuid, grant_read, to_cx2, upload_cx2,
                      load_canonical_dir)
-from validate_v6 import validate, passed, parse_instant
+from validate_v6 import (EMBED_REFUSE, EMBED_REVIEW, embedded_size, parse_instant, passed,
+                         validate)
 
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
 ADMIN = os.environ.get("SYMPOSIUM_ADMIN", "ndex-admin")
@@ -169,6 +170,23 @@ def main(argv):
         if role and f"_{role}_" not in str(name):
             print(f"  {name}: note  name does not carry the role segment "
                   f"('{account}_{role}_<topic>_v1'); concurrent sessions may collide")
+        # An operational guardrail, not a specification rule — which is why it lives here and
+        # not in the validator, and why the validator only ever says REVIEW about size. There
+        # is no path for the admin to put agent-generated data on the file store during the
+        # event, so a result that will not embed cannot be published at all. Better to learn
+        # that here, with the analysis still in hand, than as an HTTP 413 at the gate.
+        total, props = embedded_size(a)
+        if total > EMBED_REFUSE:
+            biggest = (f"\n           largest property: '{props[0][1]}' on {props[0][0]}, "
+                       f"{props[0][2] // 1024} KB" if props else "")
+            print(f"  {name}: FAIL  embedded payload is {total // 1024} KB, over the "
+                  f"{EMBED_REFUSE // 1024} KB limit{biggest}\n"
+                  f"           Results are always embedded in this event — there is no path to "
+                  f"publish bulk data\n           to the file store. Narrow the analysis so the "
+                  f"result is one a reader can read, or\n           defer it and say so in the "
+                  f"session report.")
+            fatal = True
+            kinds.add("size")
         sibs = [x for x in arts if x is not a]
         findings = validate(a, record + sibs, members)
         ok = passed(findings)

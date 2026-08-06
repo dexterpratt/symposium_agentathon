@@ -35,6 +35,23 @@ REL_TARGET_TYPE = {"depends_on": "Assertion", "has_alternative": "Assertion",
 BASIS_RELS = {"depends_on", "grounded_by", "assumes"}
 STD_METHODS = {"text_span", "csv", "rest", "download"}
 VERIFIABLE_METHODS = {"text_span", "csv"}                                  # gate can check content
+
+# ---------------------------------------------------------------- embedded payload size
+# The server ceiling is between 814 KB and 1.5 MB (measured; above it the upload is a 413),
+# but that is not the limit that matters. In this profile embedded content lives in a string
+# property, NOT in the CX2 nodes, so nothing can query it — an agent reading one row loads the
+# whole artifact into context. The binding limit is therefore what a reader can actually read.
+#
+# 50 KB is roughly 12k tokens: a few hundred rows, or the Results section of a paper. Past it,
+# the honest fix is almost never a bigger payload — it is a narrower analysis.
+#
+# REVIEW, never FAIL. Size is a judgment about whether an analysis was focused, and the
+# validator does not encode judgment as vocabulary; it says what it sees and a human reads it.
+# The hard refusal lives in publish.py, where it is an operational guardrail rather than a
+# statement about the record.
+EMBED_REVIEW = 50 * 1024
+EMBED_REFUSE = 250 * 1024
+
 NAME_FORBIDDEN = re.compile(r"[.#]")
 CITATION_RE = re.compile(r"\]\(\s*(?:<(@[^>]+)>|(@[^)\s]+))\s*\)")
 HEADER_REQUIRED = ("name", "type", "created", "published_by", "specification_version")
@@ -582,6 +599,45 @@ def check_corpus(a, index, members, record_names):
     return f
 
 
+def embedded_size(a):
+    """-> (total serialized bytes, [(where, property, bytes)] largest first).
+
+    Total is the serialized canonical JSON, because that is what is uploaded, what the gate
+    copies into the record, and what an agent has to hold in context to read any part of it.
+    """
+    try:
+        total = len(json.dumps(a))
+    except Exception:                                          # noqa: BLE001
+        return 0, []
+    props = []
+    h = a.get("artifact") or {}
+    for k, v in h.items():
+        if isinstance(v, str) and len(v) > 1024:
+            props.append(("artifact", k, len(v)))
+    for o in (a.get("objects") or []):
+        if not isinstance(o, dict):
+            continue
+        for k, v in o.items():
+            if isinstance(v, str) and len(v) > 1024:
+                props.append((o.get("name", "?"), k, len(v)))
+    props.sort(key=lambda p: -p[2])
+    return total, props
+
+
+def check_size(a):
+    """Embedded payload size. REVIEW only — see EMBED_REVIEW."""
+    total, props = embedded_size(a)
+    if total <= EMBED_REVIEW:
+        return []
+    where = (f"; largest is '{props[0][1]}' on {props[0][0]} at {props[0][2] // 1024} KB"
+             if props else "")
+    return [finding("SIZE", "REVIEW",
+                    f"embedded payload is {total // 1024} KB{where}. Embedded content is not "
+                    f"queryable in this profile — a reader loads all of it to read any of it. "
+                    f"Above ~{EMBED_REVIEW // 1024} KB the fix is usually a narrower analysis, "
+                    f"not a bigger artifact.")]
+
+
 def validate(candidate, record=(), members=()):
     """-> list of findings for `candidate`, validated against the accepted `record`."""
     f = check_structure(candidate)
@@ -595,6 +651,7 @@ def validate(candidate, record=(), members=()):
     f += check_argument(candidate)
     f += check_corpus(candidate, index, set(members), record_names)
     f += check_independence(candidate, index)
+    f += check_size(candidate)
     return f
 
 

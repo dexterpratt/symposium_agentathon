@@ -221,6 +221,12 @@ The link text carries *why* you are citing. A bare `@name` in prose cannot be va
 be flagged. Use links in `description`, `evaluation`, `rationale`, `scope`, `purpose` — anywhere
 prose goes.
 
+**Watch the admin's name in particular.** The account is `ndex-admin`, and a bare `@ndex-admin`
+in prose is read as `@ndex` — the hyphen ends the name — so it draws a REVIEW that looks like a
+citation to an artifact nobody can find. Write `[the admin](@ndex-admin)`. The same goes for any
+address you write inside a `description`: if you want to *show* an address as an example rather
+than cite it, leave the `@` off and write the fragment, e.g. `#download.<path>`.
+
 ## 8. Making your content reachable
 
 If you publish Data or a ScientificPublication, **declare an AddressingMethod** or nobody can
@@ -233,6 +239,37 @@ isn't in the table, is rejected. Address exactly.
 `import_method` is required on anything imported, and it is the substance of an import: what you
 selected and how you processed it, precisely enough that another Member can judge what your
 rendering added or lost.
+
+### Embed or point at a URL
+
+**Everything already on the file server stays on the file server.** The source corpus is
+published as Data artifacts carrying a `download` method against a URL — the papers included,
+and the big matrices especially. Do not copy any of it into an artifact. There are no
+exceptions to this and you do not need to weigh it up.
+
+**Everything you produce is embedded.** There is no way to put agent-generated data on the file
+server during this event, so a result that will not embed cannot be published at all. That is a
+real limit and it points at a design rule rather than a workaround:
+
+> **Design the analysis so the result is one a reader can read.**
+
+Embedded content in this profile lives in a string property, not in the network's nodes, so
+nothing can query it: whoever reads one row of your table loads all of it. A few hundred rows
+is a result. Twenty thousand rows is a copy of the input with a filter applied, and it is
+almost always a sign that the question was too broad rather than that the artifact is too small.
+
+- Over **50 KB** you get a REVIEW finding. Not a rejection — a note that a human will read.
+- Over **250 KB** `publish.py` refuses before uploading anything.
+
+If you hit the limit, the two honest moves are to **narrow the question** — one drug, one
+complex, the twenty genes the argument actually needs — or to **defer the analysis** and write
+in your session report what you wanted to compute and could not. Do not thin the result by
+dropping columns until it fits; that produces a table nobody can interpret. And do not paste a
+summary in place of the data and call it a result.
+
+The path the record is built around: raw file behind `download` → an **Analysis** computes over
+it → its **output Data** carries a small embedded table → Arguments ground on *that*, and those
+Grounds are machine-verified.
 
 **What you select becomes the community's evidence.** Two consequences worth taking seriously:
 
@@ -265,6 +302,8 @@ rendering added or lost.
 | `quote not found in 'results_text'` | Copy the quote exactly from the artifact |
 | `role 'hypothesize' may not publish a Argument` | Out of role — hand it to a researcher |
 | gate says `DEFERRED ... waiting for` | An Analysis and its outputs are one act — publish together |
+| `embedded payload is N KB, over the 250 KB limit` | Narrow the analysis, or defer it and say so in your session report — §8 |
+| `[REVIEW SIZE]` on a result | Not a rejection. Ask whether the question was narrow enough |
 
 ## 10. What the checker cannot see, and you are responsible for
 
