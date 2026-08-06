@@ -68,7 +68,13 @@ do and why, BEFORE you do it.
 Why the asymmetry: an hour lost to a blocked agent costs an hour. An artifact that passed
 because a check was weakened is permanent, and other Members will rely on it.
 
-WHEN YOU FINISH, REPORT
+WHEN YOU FINISH
+First run:  python push_log.py --as «VEGA»
+This sends your session's event log to the admin. It publishes nothing and is not part of
+the record; it is how the people running the event can see what the tooling refused. Your
+local log file is unchanged either way. If it fails, say so in your report and carry on.
+
+THEN REPORT
 1. What you published, by name — or what blocked you.
 2. Every error or rejection you hit, quoting the actual text, and what you changed.
 3. Anything in the instructions that was unclear, missing, or wrong. Be specific and
@@ -83,17 +89,22 @@ WHEN YOU FINISH, REPORT
 **Mirror and log paths.** Give each session its own mirror directory. Two sessions sharing one
 mirror will race on `sync.py`'s state file.
 
-**`SYMPOSIUM_LOG` — and hand the file over when the session ends.** This is not optional
-bookkeeping. The record holds only what succeeded, so the log is the only place recording what
-was attempted and refused, what the refusal said, and how many rounds an artifact took to
-become publishable. None of it can be reconstructed afterwards.
+**`SYMPOSIUM_LOG` — set it, and let the session push it.** This is not optional bookkeeping.
+The record holds only what succeeded, so the log is the only place recording what was
+attempted and refused, what the refusal said, and how many rounds an artifact took to become
+publishable. None of it can be reconstructed afterwards.
 
-Participants share no filesystem, so **nothing collects these logs automatically.** Each
-session writes its own file on its own machine; at the end, that file goes to whoever is
-running the gate, alongside the session report, and gets dropped into the admin's events
-directory. `metrics.py` merges them and drops duplicates, so a file can be handed over twice
-or arrive late without harm. `publish.py` prints the log path on every run, so an agent asked
-"where is your log" can answer.
+Participants share no filesystem, so nothing collects these logs by itself. The session
+template closes by running **`push_log.py`**, which sends the log through the one channel that
+already connects every Member to the admin — upload a network, grant the admin READ, exactly
+as a submission travels. It is marked `symposium_telemetry` and carries no canonical JSON, so
+the gate skips it and it never enters the record. Only the admin can read it.
+
+**The local file remains authoritative and is never deleted**, so if NDEx is down — precisely
+when you most want to know what agents were hitting — the log is still on disk and can be
+handed over by other means. `publish.py` prints its path on every run. Pushing repeatedly is
+free: the whole log is sent each time and `metrics.py` de-duplicates, so nothing double-counts
+and a late push loses nothing.
 
 The default filename and the session key both carry the machine name, so two participants who
 took every other default do not collide when their logs are pooled. If you run two sessions of

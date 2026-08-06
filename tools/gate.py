@@ -35,7 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import telemetry
-from ndex_io import (BASE, CANONICAL_ATTR, RECORD_MARK, REPLY_MARK, auth, api as _api,
+from ndex_io import (BASE, CANONICAL_ATTR, RECORD_MARK, REPLY_MARK, TELEMETRY_MARK,
+                     TELEMETRY_SEGMENT, auth, api as _api, extract_artifact,
                      extract_canonical, grant_read as _grant, to_cx2, upload_cx2 as _upload,
                      user_uuid, load_canonical_dir)
 from validate_v6 import validate, passed
@@ -57,6 +58,12 @@ def upload_cx2(aspects, tok=None):
 
 def _extract(uuid):
     return extract_canonical(uuid, ADMIN_TOK)
+
+
+def _extract_full(uuid):
+    """-> (canonical, network_attributes, err). The attributes are needed to read the role
+    marks, which is how an event log is told apart from a submission for certain."""
+    return extract_artifact(uuid, ADMIN_TOK)
 
 
 # --------------------------------------------------------------------------- mirror repo
@@ -99,6 +106,12 @@ def discover():
             print(f"  ! summary {uuid[:8]} failed: HTTP {st}")
             continue
         if s.get("owner") == ADMIN_USER:
+            continue
+        # A member's event log is granted to the admin through this same channel and is NOT
+        # a bid for publication. Skipped here, on the summary, so a log pushed every few
+        # minutes is not re-downloaded in full on every pass. Silently: it is not an error,
+        # and a line per log per cycle is how a real failure gets missed at three o'clock.
+        if TELEMETRY_SEGMENT in (s.get("name") or ""):
             continue
         subs.append({"uuid": uuid, "name": s.get("name"), "owner": s.get("owner")})
     return subs
@@ -255,7 +268,9 @@ def run_once():
         if s["name"] in names:
             print(f"  {s['name']}: already in the record — skipping")
             continue
-        canonical, err = _extract(s["uuid"])
+        canonical, na, err = _extract_full(s["uuid"])
+        if (na or {}).get(TELEMETRY_MARK):
+            continue                       # an event log, whatever it is called
         if err:
             print(f"  {s['name']}: ! {err}")
             continue

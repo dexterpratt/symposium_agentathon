@@ -182,6 +182,12 @@ python3 sync.py    --as VEGA                                  # see it accepted,
 `--check` runs **the same validator the gate runs, against the same record**. If it passes, the
 gate will accept. A rejection should be a surprise, not part of your workflow.
 
+When a session ends it also runs `push_log.py`, which sends that session's event log to the
+admin. That log is how the people running the event can see what the tooling refused and how
+many attempts a piece of work took — none of which is visible in the record, because the
+record holds only what succeeded. It is not an Artifact, it never enters the record, and only
+the admin can read it.
+
 **You can try this now, without credentials.** `--check` uploads nothing and needs no network:
 
 ```bash
@@ -266,6 +272,8 @@ tools/                                your agent's working directory — everyth
   CANONICAL-v6.md                     the JSON profile and the four addressing methods
   roles.json                          the six roles: charters, limits, prohibitions
   publish.py  sync.py  gate.py        the member loop, and the admin gate
+  push_log.py  collect_logs.py       send a session's event log; gather them admin-side
+  telemetry.py  metrics.py           the event schema, and what gets measured
   validate_v6.py  selftest_v6.py      the conformance validator and its 42 fixtures
   ndex_io.py                          NDEx transport (auth, CX2, upload, grants)
   browse_v6.py  templates_v6.py       the record browser

@@ -26,6 +26,14 @@ CANONICAL_ATTR = "symposium_canonical"
 SUBMIT_MARK = "symposium_submission"   # a member's bid for publication
 RECORD_MARK = "symposium_record"       # an accepted artifact: THE community record
 REPLY_MARK = "symposium_reply"         # an admin rejection notice: NOT part of the record
+TELEMETRY_MARK = "symposium_telemetry"  # a member's event log: NOT an artifact, NOT the record
+TELEMETRY_ATTR = "symposium_events"     # the log itself, JSONL in one attribute
+
+# Reserved name segment for telemetry networks. The gate skips these on the cheap summary it
+# already has, before downloading anything — a log pushed every cycle would otherwise be
+# re-fetched in full on every pass. The mark is checked as well, so an oddly-named log is
+# still skipped; the name is the optimisation, the mark is the guarantee.
+TELEMETRY_SEGMENT = "_TELEMETRY_"
 
 
 def auth(prefix):
@@ -115,6 +123,54 @@ def to_cx2(canonical, marks=None):
         {"edges": edges},
         {"status": [{"error": "", "success": True}]},
     ]
+
+
+def to_cx2_blob(name, description, payload, marks=None):
+    """An opaque payload as a CX2 network — used for the event log, never for an Artifact.
+
+    This is NOT a projection of anything: there is no canonical JSON, no Objects, and
+    deliberately no `symposium_canonical` attribute, because a telemetry network is not a bid
+    for publication and must never be mistaken for one. It carries the log verbatim in a
+    single attribute and one placeholder node, since an entirely empty network is not
+    something this deployment has been tested to accept.
+    """
+    marks = dict(marks or {TELEMETRY_MARK: True})
+    return [
+        {"CXVersion": "2.0", "hasFragments": False},
+        {"metaData": [{"name": "attributeDeclarations", "elementCount": 1},
+                      {"name": "networkAttributes", "elementCount": 1},
+                      {"name": "nodes", "elementCount": 1},
+                      {"name": "edges", "elementCount": 0}]},
+        {"attributeDeclarations": [{
+            "networkAttributes": dict(
+                {"name": {"d": "string"}, "description": {"d": "string"},
+                 TELEMETRY_ATTR: {"d": "string"}},
+                **{k: {"d": "boolean" if isinstance(v, bool) else "string"}
+                   for k, v in marks.items()}),
+            "nodes": {"name": {"d": "string"}, "type": {"d": "string"}}}]},
+        {"networkAttributes": [dict(
+            {"name": name, "description": description, TELEMETRY_ATTR: payload}, **marks)]},
+        {"nodes": [{"id": 0, "v": {"name": "event log", "type": "Telemetry"}}]},
+        {"edges": []},
+        {"status": [{"error": "", "success": True}]},
+    ]
+
+
+def extract_blob(network_uuid, tok, attr=TELEMETRY_ATTR):
+    """-> (payload_string, network_attributes, None) or (None, na, reason)."""
+    st, txt = api("GET", f"/v3/networks/{network_uuid}", tok, raw=True)
+    if st != 200:
+        return None, None, f"cannot read network: HTTP {st}"
+    try:
+        for asp in json.loads(txt):
+            if "networkAttributes" in asp:
+                na = asp["networkAttributes"][0]
+                if attr not in na:
+                    return None, na, f"network carries no '{attr}' attribute"
+                return na[attr], na, None
+    except Exception as e:                                     # noqa: BLE001
+        return None, None, f"malformed CX2: {e}"
+    return None, None, "no networkAttributes aspect"
 
 
 def upload_cx2(aspects, tok):
