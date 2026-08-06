@@ -280,6 +280,12 @@ Grounds are machine-verified.
   discussion, that is a signal to **extract the Argument** instead: set `extracted_from` and
   `extraction_method` and make the reasoning inspectable as structure. Papers that present their
   reasoning poorly are exactly the ones a quote will misrepresent.
+- **Extracting a paper's argument has its own procedure — `SOP-EXTRACTION.md`.** It is two acts,
+  in order: preserve the passages as Data with a `text_span` method, let the gate accept it and
+  sync, *then* publish the Argument whose Grounds address it. The SOP carries the rules that are
+  not optional — stripping JATS markup without fusing figure captions into paragraphs, deciding
+  where a `criterion` belongs, and what to write when the independence check fires, which on an
+  extracted Argument it always will.
 - **A review or other secondary source should declare its narrative methods
   `groundable: false`.** A review restates work done elsewhere; grounding on it puts a
   second-hand account where the evidence should be. It stays fully citable in prose, and it is
