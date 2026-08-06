@@ -170,6 +170,11 @@ CASES = [
     ("name already in the record", mut(lambda a: a["artifact"].update(
         name="agent_lyra_gdsc_v1")), False, "UNIQUE"),
     ("missing agent name prefix", mut(lambda a: a["artifact"].update(name="arid1a")), False, "NAMING"),
+    # An NDEx account name may contain a hyphen (`ndex-admin`), and the admin publishes the
+    # end-of-day metrics under its own account. The prefix rule is structural; matching the
+    # name to the publishing account is enforced where the account is known.
+    ("hyphenated member prefix is accepted",
+     mut(lambda a: a["artifact"].update(name="ndex-admin_metrics_v1")), True, None),
     ("wrong spec version", mut(lambda a: a["artifact"].update(specification_version="5")), False, "STRUCT"),
     ("supersedes without rationale", mut(lambda a: a["artifact"].update(
         supersedes=["@agent_lyra_chen2025_v1"])), False, "STRUCT"),

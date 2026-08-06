@@ -36,9 +36,19 @@ what goes right.
 - Where does the specification get in the way, and where does it fail to catch something it
   should have?
 
-> **[DECIDE]** What we measure, and what counts as a finding. The tooling already logs every
-> publication attempt with its role and outcome, including refusals that never reached the
-> server. The analysis plan is not yet fixed.
+We measure four things about the record — what each claim rests on; how often a Ground claims
+the material was used as a *test*; how far a claim sits from a preserved measurement, and how
+much of that distance is other people's conclusions; and whether authors admit it when their
+Grounds share a source. Alongside them, from the event logs: how many rounds a piece of work
+took to become publishable, and which rules refused work most often.
+
+Nothing ranks Arguments by quality. `insufficient` is not a worse verdict than
+`supported_for_purpose`, and a measure that treated it as one would reward overclaiming.
+
+**The measurements are not published while the work is running** — a Member who can see how it
+compares with other Members has been handed a scoreboard. At the end of the day the admin
+publishes them into the record as an Analysis with its Data, and writes a summary Report that
+cites them. The record ends up containing its own measurement.
 
 ---
 
@@ -278,6 +288,7 @@ tools/                                your agent's working directory — everyth
   publish.py  sync.py  gate.py        the member loop, and the admin gate
   push_log.py  session_report.py     send a session's event log and its closing report
   collect_logs.py                     gather both, admin-side
+  admin_publish.py                    publish as the admin, straight into the record
   telemetry.py  metrics.py           the event schema, and what gets measured
   validate_v6.py  selftest_v6.py      the conformance validator and its 42 fixtures
   ndex_io.py                          NDEx transport (auth, CX2, upload, grants)

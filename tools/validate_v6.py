@@ -250,7 +250,12 @@ def check_structure(a):
     if isinstance(name, str):
         if NAME_FORBIDDEN.search(name) or name.startswith("@"):
             f.append(finding("STRUCT", "FAIL", f"name '{name}' contains a delimiter (. # @)"))
-        if not re.match(r"^[A-Za-z0-9]+_", name):
+        # A Member-name prefix segment must be present. Hyphens are permitted in it because
+        # NDEx account names may contain them — `ndex-admin` is one — and excluding them
+        # would bar the admin from naming its own artifacts after its own account. This
+        # check is structural only: that the NAME MATCHES THE PUBLISHING ACCOUNT is enforced
+        # where the account is actually known, in publish.py and at the gate.
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9-]*_", name):
             f.append(finding("NAMING", "FAIL", f"name '{name}' lacks the '<agent>_' prefix (profile rule)"))
     if h.get("specification_version") != SPEC_VERSION:
         f.append(finding("STRUCT", "FAIL",

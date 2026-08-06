@@ -621,6 +621,128 @@ def compute(record_dir, events_spec):
     return m
 
 
+def as_artifacts(m, day=None, admin="ndex-admin"):
+    """The snapshot as a publishable Analysis + Data pair.
+
+    Published at the END of the day, never during it. While the work is running these
+    numbers are for the people managing the event: a Member that can see how it compares
+    with other Members is being handed a scoreboard, and a record whose value is care does
+    not survive one. Once the work has stopped that risk is gone, and the record containing
+    its own measurement is worth more than the measurement sitting beside it.
+
+    `inputs` is deliberately NOT declared. The honest input is the whole record, and naming
+    every artifact would hang one edge per artifact off a single node in the community
+    overview — turning the one view that shows the shape of the day into a hairball on the
+    last commit of it. The procedure says what was read; the stamp says as of when.
+
+    The Data's `csv` method IS groundable. A later Argument about the event itself — a
+    critic assessing the record's own quality, or the write-up — should be able to ground on
+    a measured number rather than restate it, and that is exactly what groundable means.
+    """
+    day = day or "final"
+    an = f"{admin}_metrics_{day}_v1"
+    dn = f"{admin}_metrics_data_{day}_v1"
+    c, b, cr, ch = m["counts"], m["basis"], m["criterion"], m["chains"]
+    ind, lb, e = m["independence"], m["load_bearing"], m["effort"]
+
+    def csv(header, rows):
+        return "\n".join([header] + [",".join(str(x) for x in r) for r in rows]) + "\n"
+
+    summary = csv("metric,value", [
+        ("artifacts", c["artifacts"]), ("arguments", c["arguments"]),
+        ("members", c["members"]), ("assertions", b["assertions"]),
+        ("assertions_on_assumption_alone", b["assumption_only"]),
+        ("grounds", cr["grounds"]), ("grounds_with_criterion", cr["with_criterion"]),
+        ("criterion_rate", cr["rate"]),
+        ("assertions_reaching_a_measurement", ch["terminates_in_measurement"]),
+        ("assertions_not_reaching_a_measurement", ch["does_not_terminate"]),
+        ("max_testimony_hops", ch["max_testimony_hops"]),
+        ("independence_flagged", ind["flagged"]),
+        ("groundable_artifacts_unused", len(lb["unused"])),
+        ("artifacts_attempted", e["artifacts_attempted"]),
+        ("passed_first_time", e["rounds_first_time"]),
+        ("mean_rounds_to_a_clean_result", e["rounds_mean"]),
+    ])
+    by_member = csv("member,grounds,with_criterion,criterion_rate",
+                    [(k, v["grounds"], v["with_criterion"], v["rate"])
+                     for k, v in cr["by_member"].items()])
+    chain_by_arg = defaultdict(lambda: [0, 0, None])
+    for r in ch["rows"]:
+        agg = chain_by_arg[r["argument"]]
+        agg[0] += 1
+        agg[1] += 0 if r["terminates"] else 1
+        if r["terminates"] and r["testimony_hops"] is not None:
+            agg[2] = max(agg[2] or 0, r["testimony_hops"])
+    by_argument = csv("argument,assertions,not_reaching_a_measurement,max_testimony_hops,"
+                      "grounds,with_criterion",
+                      [(a, v[0], v[1], v[2] if v[2] is not None else "",
+                        cr["by_argument"].get(a, {}).get("grounds", 0),
+                        cr["by_argument"].get(a, {}).get("with_criterion", 0))
+                       for a, v in sorted(chain_by_arg.items())])
+    sources = csv("artifact,type,grounds,assertions,arguments,members",
+                  [(r["artifact"], r["type"], r["grounds"], r["assertions"],
+                    r["arguments"], r["members"]) for r in lb["rows"]])
+    rules = csv("check,failures", sorted(e["which_rules_bite"].items()))
+
+    analysis = {
+        "artifact": {
+            "name": an, "type": "Analysis", "specification_version": "6",
+            "published_by": f"@{admin}", "created": None,
+            "title": "Measurement of this record and the work that produced it",
+            "authors": [admin],
+            "procedure": (
+                "Computed over the whole CommunityRecord as accepted at the stamped time, "
+                "together with the event logs Members pushed during the day.\n\n"
+                "Four measures. BASIS COMPOSITION: for each Assertion, which of "
+                "grounded_by / depends_on / assumes it carries — the gate guarantees some "
+                "basis and says nothing about which. CRITERION RATE: the share of Grounds "
+                "declaring a criterion, i.e. claiming the material was used as a test that "
+                "could have counted against the claim. TRUST CHAINS: for each Assertion, "
+                "whether any path of Grounds and dependencies terminates in preserved "
+                "content, and the minimum number of times such a path crosses into another "
+                "Argument's Assertion; the shortest path is reported, so zero hops means the "
+                "author grounded on something a reader can examine directly, and not "
+                "terminating is a statement about what can be checked rather than a verdict "
+                "on the claim. INDEPENDENCE ACKNOWLEDGEMENT: where the validator flagged "
+                "Grounds sharing a source, whether the Assessment says so — triaged by "
+                "keyword and settled by reading, never by the keyword pass alone.\n\n"
+                "Also: which sources carry load and which were never grounded on; and from "
+                "the logs, rounds to a clean result and which validation rules refused work "
+                "most often, with tooling refusals (naming, role) kept apart from the "
+                "validator's.\n\n"
+                "`inputs` is deliberately not declared. The input is the whole record; "
+                "naming every artifact would hang one edge per artifact off a single node "
+                "and make the community overview unreadable.\n\n"
+                "No Argument is ranked by quality and no verdict is scored above another. "
+                "`insufficient` is not a worse outcome than `supported_for_purpose`, and a "
+                "measure treating it as one would reward overclaiming. These numbers are "
+                "descriptive: one day and this many artifacts is not a sample, and they "
+                "support no significance test and no comparison between Members."),
+            "outputs": [f"@{dn}"],
+        },
+        "objects": [], "relationships": [],
+    }
+    data = {
+        "artifact": {
+            "name": dn, "type": "Data", "specification_version": "6",
+            "published_by": f"@{admin}", "created": None,
+            "title": "Measured properties of this record",
+            "authors": [admin], "produced_by": f"@{an}",
+            "summary": summary, "by_member": by_member, "by_argument": by_argument,
+            "sources": sources, "rules_that_refused_work": rules,
+        },
+        "objects": [{
+            "name": "csv", "type": "AddressingMethod", "groundable": True,
+            "description": ("A cell in any CSV property of this artifact. Reference: "
+                            "row=<value-of-first-column>&col=<column-name>. Line 1 is the "
+                            "header. Groundable: a claim about this record or this event may "
+                            "rest on a measured value rather than restate it."),
+        }],
+        "relationships": [],
+    }
+    return analysis, data
+
+
 def snapshot(m):
     """The few numbers worth a trend line. The interesting question is not the end state
     but whether the criterion rate decays through the afternoon and whether testimony
@@ -650,6 +772,9 @@ def main(argv=None):
     ap.add_argument("--out", default="./metrics", help="output directory")
     ap.add_argument("--at", default=None,
                     help="timestamp to label this snapshot with (default: none)")
+    ap.add_argument("--artifacts", action="store_true",
+                    help="also emit a publishable Analysis + Data pair (end of day)")
+    ap.add_argument("--day", default=None, help="label used in the artifact names")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
@@ -663,6 +788,17 @@ def main(argv=None):
         snap = {"at": args.at, **snap}
     with (out / "metrics_series.jsonl").open("a") as fh:
         fh.write(json.dumps(snap) + "\n")
+
+    if args.artifacts:
+        analysis, data = as_artifacts(m, day=args.day)
+        for a in (analysis, data):
+            (out / f"{a['artifact']['name']}.json").write_text(
+                json.dumps(a, indent=2, ensure_ascii=False) + "\n")
+        print(f"artifacts -> {out}/{analysis['artifact']['name']}.json"
+              f"\n          -> {out}/{data['artifact']['name']}.json"
+              f"\n  publish them together (one act):"
+              f"\n    python admin_publish.py {out}/{analysis['artifact']['name']}.json "
+              f"{out}/{data['artifact']['name']}.json\n")
 
     if not args.quiet:
         e, ch, cr = m["effort"], m["chains"], m["criterion"]
