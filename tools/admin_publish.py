@@ -31,7 +31,7 @@ import sys
 from datetime import datetime, timezone
 
 import gate                                                            # admin auth, accept()
-from validate_v6 import passed, report, validate
+from validate_v6 import EMBED_REFUSE, embedded_size, passed, report, validate
 
 
 def main(argv=None):
@@ -49,6 +49,17 @@ def main(argv=None):
             return 1
 
     record = gate.load_record()
+    state = gate.load_state()
+    # Same reason the gate does it: name uniqueness is checked against the mirror, so a mirror
+    # behind the server could let a duplicate name into an immutable record. Cheap — one
+    # permission-map call — and it repairs rather than refuses.
+    _ok, added, unresolved, _extra = gate.checkpoint(record, state)
+    if added:
+        print(f"  mirror was behind by {len(added)}; repaired: {', '.join(sorted(added)[:5])}")
+    if unresolved:
+        print(f"! cannot account for {len(unresolved)} admin-owned network(s) — "
+              f"run: python gate.py --rebuild")
+        return 1
     names = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
     members = set(gate.MEMBERS) | {gate.ADMIN_USER}
     print(f"admin publish as {gate.ADMIN_USER} — record holds {len(record)} artifact(s)\n")
@@ -64,6 +75,13 @@ def main(argv=None):
         name = a["artifact"].get("name", "<unnamed>")
         if name in names:
             print(f"  {name}: FAIL  already in the record; names are never reused")
+            fatal = True
+            continue
+        total, props = embedded_size(a)
+        if total > EMBED_REFUSE:
+            print(f"  {name}: FAIL  embedded payload is {total // 1024} KB, over the "
+                  f"{EMBED_REFUSE // 1024} KB limit"
+                  + (f" (largest: '{props[0][1]}' on {props[0][0]})" if props else ""))
             fatal = True
             continue
         sibs = [x for x in arts if x is not a]
@@ -84,7 +102,7 @@ def main(argv=None):
     muuids = gate.member_uuids()
     print()
     for a in arts:
-        if not gate.accept(a, record, muuids, stamp=stamp):
+        if not gate.accept(a, record, muuids, state, stamp=stamp):
             print("\n! publication failed part-way through. The record may hold some of this "
                   "act but not all of it — check the mirror before retrying.")
             return 1

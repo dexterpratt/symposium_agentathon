@@ -35,8 +35,27 @@ from ndex_io import (REPORT_ATTR, REPORT_MARK, REPORT_SEGMENT, TELEMETRY_ATTR,
 ADMIN_USER, ADMIN_TOK = auth("ADMIN")
 
 
-def granted_networks():
-    """Every network readable by the admin, with owner and name."""
+def collected_uuids(out, reports_dir):
+    """UUIDs already on disk, read off the filenames. No state file: the collection IS the state.
+
+    Every push is a new network carrying the whole cumulative log, so without this the pull
+    cost grows quadratically over a day — and on this deployment a network summary carries all
+    of its attributes, which means the log is paid for once just to find out it is a log.
+    """
+    seen = set()
+    for p in list(out.glob("*.jsonl")) + list(reports_dir.glob("*.md")):
+        part = p.stem.split("__")[-1]
+        if len(part) == 36:
+            seen.add(part)
+    return seen
+
+
+def granted_networks(skip=()):
+    """Every network readable by the admin, with owner and name.
+
+    `skip` is applied BEFORE the summary fetch, which is the whole point: the permission map
+    costs ~47 bytes per network and a summary costs the entire network.
+    """
     st, me = api("GET", "/v2/user?valid=true", ADMIN_TOK)
     if st != 200 or not isinstance(me, dict):
         print(f"! cannot resolve admin account: HTTP {st}")
@@ -49,7 +68,7 @@ def granted_networks():
         return []
     out = []
     for uuid, level in perms.items():
-        if level != "READ":
+        if level != "READ" or uuid in skip:
             continue
         st, s = api("GET", f"/v2/network/{uuid}/summary", ADMIN_TOK)
         if st != 200 or not isinstance(s, dict):
@@ -64,6 +83,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default="./events", help="directory to write logs into")
     ap.add_argument("--dry-run", action="store_true", help="list what would be pulled")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-pull everything, including networks already collected")
     args = ap.parse_args(argv)
 
     out = pathlib.Path(args.out)
@@ -72,7 +93,11 @@ def main(argv=None):
     reports_dir = out / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    nets = granted_networks()
+    already = set() if args.refresh else collected_uuids(out, reports_dir)
+    if already:
+        print(f"{len(already)} network(s) already collected — not re-fetched "
+              f"(--refresh to override)")
+    nets = granted_networks(skip=already)
     # The name segment is the cheap filter, applied to the summary already in hand; the mark
     # is the guarantee, checked after the download. Something named oddly is still collected.
     KINDS = [(TELEMETRY_SEGMENT, TELEMETRY_MARK, TELEMETRY_ATTR, "event log", out, ".jsonl"),

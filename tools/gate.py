@@ -25,7 +25,7 @@ Credentials come from the environment; nothing is passed on the command line.
 
   python gate.py --once            one pass
   python gate.py --dry-run         validate and report; publish nothing
-  python gate.py --verify          check the mirror against the server; publish nothing
+  python gate.py --verify          report mirror vs server; repair nothing, publish nothing
   python gate.py --rebuild         rebuild the mirror from the server, then exit
 
 THE MIRROR IS A CACHE, NOT THE RECORD. Every accepted artifact is uploaded as an
@@ -35,8 +35,28 @@ symposium rather than with this machine, and a lost mirror is recoverable in one
 
 What a lost mirror WOULD cost is name uniqueness, and therefore immutability: the gate refuses
 a name already in the record by consulting the mirror, so a mirror missing artifacts will
-silently accept duplicates. That is why every run verifies the mirror against the server first
-and REFUSES TO RUN if the server holds anything the mirror does not.
+silently accept duplicates. Every run therefore checks the mirror against the server before
+doing anything else — but as a CACHE CHECK, not a proof of equality.
+
+  Measured on this deployment 2026-08-06: a network summary carries every network attribute
+  as a `property`, so a summary costs the SAME as a full fetch — 239,715 bytes of summary for
+  a 232 KB artifact against 239,570 bytes of full network. There is no metadata-only endpoint;
+  `/v3/networks/{uuid}/summary` carries the properties too. Anything that walks summaries is
+  moving the whole record.
+
+  So the staleness check is the permission map instead: ~47 bytes per network, one call.
+  It answers exactly the question that matters — does the server hold a record copy whose
+  UUID this mirror does not know — and it is sound ONLY because artifacts are immutable and
+  this gate is their only writer, so UUID equality implies content equality.
+
+A gap is REPAIRED, not refused: the missing artifacts are fetched individually and written to
+the mirror, and the run continues. Refusing was the old behaviour and it stopped the gate
+during the event, which is the worst moment to stop it. The run aborts only if a repair FAILS,
+which is the state in which a duplicate name could genuinely slip through.
+
+A UUID counts as known only if its artifact is actually present in the mirror directory. That
+is what makes a deleted or half-restored mirror repair itself rather than trust its own
+bookkeeping.
 """
 from __future__ import annotations
 
@@ -78,29 +98,111 @@ def _extract_full(uuid):
     return extract_artifact(uuid, ADMIN_TOK)
 
 
+def _marked(attrs, mark):
+    """Is a role mark set? CX2 gives real booleans; a summary's `properties` gives the strings
+    "true"/"false", and a bare truthiness test would read "false" as set."""
+    return str((attrs or {}).get(mark, "")).lower() == "true"
+
+
+def _from_summary(uuid, props):
+    """Canonical JSON out of a summary already in hand, falling back to a full fetch.
+
+    A summary carries every network attribute, so the submission has ALREADY been downloaded
+    by the time discovery has classified it; fetching the network again doubles the cost of
+    every new submission for nothing.
+
+    The fallback is not decoration. Completeness of the canonical property in a summary is
+    verified only up to ~236 KB, and a truncated payload would fail to parse rather than parse
+    wrongly — so a parse failure means "fetch it properly", never "reject it".
+    """
+    raw = (props or {}).get(CANONICAL_ATTR)
+    if raw:
+        try:
+            return json.loads(raw), props, None
+        except Exception:                                      # noqa: BLE001
+            pass
+    return _extract_full(uuid)
+
+
 # --------------------------------------------------------------------------- mirror repo
+STATE = ".gate_state.json"      # the gate's UUID bookkeeping; never the record
+
+
 def load_record():
     MIRROR.mkdir(parents=True, exist_ok=True)
     return load_canonical_dir(MIRROR)
 
 
-def write_record(canonical, uuid):
+def load_state():
+    """UUID bookkeeping, and nothing else.
+
+    `record`   admin-owned record copies      uuid -> artifact name
+    `other`    admin-owned but not the record uuid -> reason (rejection replies, strays)
+    `granted`  submissions already disposed of uuid -> what happened
+
+    Every one of these is an optimisation and none of them is authoritative: losing this file
+    costs one expensive pass, not correctness. `record` in particular is cross-checked against
+    the mirror directory on every run, so it cannot vouch for an artifact that is not there.
+    """
+    try:
+        s = json.loads((MIRROR / STATE).read_text())
+    except Exception:                                          # noqa: BLE001
+        s = {}
+    return {"record": s.get("record") or {}, "other": s.get("other") or {},
+            "granted": s.get("granted") or {}}
+
+
+def save_state(state):
+    (MIRROR / STATE).write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+
+def write_index(state):
+    """Rewrite index.jsonl from the mirror. Derived, never appended.
+
+    It used to be appended to as artifacts were accepted, which made it the one thing in this
+    design that could drift from the record it described — exactly what a catalog artifact was
+    rejected for. Rewriting it from the mirror at this scale costs nothing and cannot drift.
+    """
+    rows = []
+    for c in load_canonical_dir(MIRROR):
+        h = c["artifact"]
+        rows.append({"name": h.get("name"), "type": h.get("type"),
+                     "created": h.get("created"),
+                     "network": next((u for u, n in state["record"].items()
+                                      if n == h.get("name")), None)})
+    rows.sort(key=lambda r: (r["created"] or "", r["name"] or ""))
+    with (MIRROR / "index.jsonl").open("w") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+
+
+def write_record(canonical, uuid, state):
     p = MIRROR / f"{canonical['artifact']['name']}.json"
     p.write_text(json.dumps(canonical, indent=2) + "\n")
-    (MIRROR / "index.jsonl").open("a").write(json.dumps(
-        {"name": canonical["artifact"]["name"], "type": canonical["artifact"]["type"],
-         "created": canonical["artifact"]["created"], "network": uuid}) + "\n")
+    state["record"][uuid] = canonical["artifact"]["name"]
+    write_index(state)
+    save_state(state)
     return p
 
 
 # --------------------------------------------------------------------------- discovery
-def discover():
+def discover(state):
     """Submissions the admin can see, driven by the grant itself.
 
     NOT by search: on this deployment a freshly uploaded private network has
     `indexLevel: NONE` and simply does not appear in /v2/search/network, so search-based
     discovery silently drops submissions. The permission map is exact and immediate — a
-    member's grant IS the submission signal."""
+    member's grant IS the submission signal.
+
+    The permission map costs ~47 bytes per network; a summary costs the WHOLE network, because
+    every attribute rides along in `properties`. So a UUID already disposed of is skipped
+    before its summary is fetched. Without that, every submission ever made and every event
+    log ever pushed is re-downloaded in full on every pass — and a rejected submission is
+    re-validated and re-rejected on every pass, posting a fresh reply network each time.
+
+    A DEFERRED submission is deliberately not recorded as seen: it has to be looked at again
+    when its sibling arrives.
+    """
     st, me = api("GET", "/v2/user?valid=true")
     if st != 200:
         print(f"  ! cannot resolve admin account: HTTP {st}")
@@ -113,20 +215,25 @@ def discover():
     for uuid, level in perms.items():
         if level != "READ":
             continue                       # ADMIN/WRITE = our own record copies and replies
+        if uuid in state["granted"]:
+            continue                       # already accepted, rejected, or ruled out
         st, s = api("GET", f"/v2/network/{uuid}/summary")
         if st != 200 or not isinstance(s, dict):
             print(f"  ! summary {uuid[:8]} failed: HTTP {st}")
-            continue
+            continue                       # transient: never recorded as seen
         if s.get("owner") == ADMIN_USER:
+            state["granted"][uuid] = "admin-owned"
             continue
         # A member's event log and its closing session report both arrive through this same
-        # channel and neither is a bid for publication. Skipped here, on the summary, so a
-        # log pushed every few minutes is not re-downloaded in full on every pass. Silently:
-        # neither is an error, and a line per push per cycle is how a real failure gets
-        # missed at three o'clock.
+        # channel and neither is a bid for publication. Recorded as seen so the summary — which
+        # carries the entire log — is paid for once and never again. Silently: neither is an
+        # error, and a line per push per cycle is how a real failure gets missed at three o'clock.
         if any(seg in (s.get("name") or "") for seg in NON_ARTIFACT_SEGMENTS):
+            state["granted"][uuid] = "non-artifact (name segment)"
             continue
-        subs.append({"uuid": uuid, "name": s.get("name"), "owner": s.get("owner")})
+        subs.append({"uuid": uuid, "name": s.get("name"), "owner": s.get("owner"),
+                     "props": {p.get("predicateString"): p.get("value")
+                               for p in (s.get("properties") or [])}})
     return subs
 
 
@@ -180,40 +287,104 @@ def server_record():
     return out, None
 
 
-def verify_mirror(record):
-    """-> (ok, missing, extra). Missing = on the server, absent from the mirror: the
-    dangerous direction, because the gate checks name uniqueness against the mirror."""
-    server, err = server_record()
+def admin_owned_uuids():
+    """Every network this account owns, as a UUID set. -> (uuids, err)
+
+    ~47 bytes per network, one call, and it is the ONLY cheap thing on this deployment: a
+    network summary carries all of its attributes, so walking summaries moves the whole record
+    (measured: 239,715 bytes of "summary" for a 232 KB artifact). The permission map carries
+    no attributes at all.
+    """
+    st, me = _api("GET", "/v2/user?valid=true", ADMIN_TOK)
+    if st != 200 or not isinstance(me, dict):
+        return None, f"cannot resolve admin account: HTTP {st}"
+    st, perms = _api("GET", f"/v2/user/{me['externalId']}/permission"
+                            f"?type=NETWORK&permission=ADMIN", ADMIN_TOK)
+    if st != 200 or not isinstance(perms, dict):
+        return None, f"cannot list admin-owned networks: HTTP {st}"
+    return set(perms), None
+
+
+def checkpoint(record, state, repair=True):
+    """Cheap staleness check, then repair. -> (ok, added, unresolved, extra)
+
+    `ok` is None if the server could not be reached at all — a different thing from a stale
+    mirror, and not a reason to distrust what is already held.
+
+    A UUID is KNOWN only if the artifact it maps to is actually a file in the mirror. Trusting
+    the state file alone would let a mirror that lost its .json files still claim to know every
+    name, and name uniqueness is exactly what the mirror is for.
+    """
+    names = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
+    server, err = admin_owned_uuids()
     if server is None:
-        print(f"  ! cannot verify the mirror against the server: {err}")
-        return None, set(), set()
-    local = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
-    missing = set(server) - local
-    extra = local - set(server)
-    return (not missing), missing, extra
+        print(f"  ! cannot reach the server to check the mirror: {err}")
+        return None, [], [], set()
+
+    known = {u for u, n in state["record"].items() if n in names} | set(state["other"])
+    unknown = server - known
+    extra = {n for u, n in state["record"].items() if u not in server and n in names}
+
+    if not repair:                          # --verify reports; it does not touch the mirror
+        return (not unknown), [], sorted(unknown), extra
+
+    # Drop bookkeeping for artifacts that are no longer in the mirror, so a restored-from-
+    # backup mirror does not carry a stale claim about what it holds.
+    for u in [u for u, n in state["record"].items() if n not in names]:
+        state["record"].pop(u)
+
+    added, unresolved = [], []
+    for uuid in sorted(unknown):
+        canonical, na, ferr = _extract_full(uuid)
+        if ferr or not canonical:
+            # Could be a rejection reply or a stray, which carry no canonical JSON and are not
+            # a gap; could equally be a network that failed to read. Tell them apart on the
+            # role mark, which a reply always carries.
+            if _marked(na, REPLY_MARK) or any(_marked(na, m) for m in NON_ARTIFACT_MARKS):
+                state["other"][uuid] = "reply-or-non-artifact"
+                continue
+            unresolved.append(uuid)
+            print(f"  ! cannot read admin-owned network {uuid[:8]}: {ferr or 'no canonical JSON'}")
+            continue
+        if not _marked(na, RECORD_MARK):
+            state["other"][uuid] = "admin-owned, not marked as record"
+            continue
+        name = canonical.get("artifact", {}).get("name")
+        if not name:
+            state["other"][uuid] = "canonical JSON carries no artifact name"
+            continue
+        (MIRROR / f"{name}.json").write_text(json.dumps(canonical, indent=2) + "\n")
+        state["record"][uuid] = name
+        names.add(name)
+        record.append(canonical)
+        added.append(name)
+    if added:
+        write_index(state)
+    save_state(state)
+    return (not unresolved), added, unresolved, extra
 
 
 def rebuild_mirror():
-    """Write the server's record back into the mirror. Never deletes anything local."""
+    """Write the server's record back into the mirror. Never deletes anything local.
+
+    This is the one place a whole-account listing is the right call: it is the recovery path,
+    it runs once, and it genuinely needs every artifact's content. The per-run staleness check
+    uses `checkpoint()` instead — see the module docstring for why the difference matters.
+    """
     server, err = server_record()
     if server is None:
         print(f"! {err}")
         return 1
     MIRROR.mkdir(parents=True, exist_ok=True)
-    written = 0
+    state = load_state()
+    state["record"] = {}
     for name, (uuid, canonical) in sorted(server.items()):
-        p = MIRROR / f"{name}.json"
-        p.write_text(json.dumps(canonical, indent=2) + "\n")
-        written += 1
-    idx = MIRROR / "index.jsonl"
-    with idx.open("w") as fh:
-        for name, (uuid, canonical) in sorted(
-                server.items(), key=lambda kv: kv[1][1]["artifact"].get("created") or ""):
-            fh.write(json.dumps({"name": name,
-                                 "type": canonical["artifact"].get("type"),
-                                 "created": canonical["artifact"].get("created"),
-                                 "network": uuid}) + "\n")
-    print(f"rebuilt {MIRROR} from the server: {written} artifact(s), index.jsonl rewritten")
+        (MIRROR / f"{name}.json").write_text(json.dumps(canonical, indent=2) + "\n")
+        state["record"][uuid] = name
+    write_index(state)
+    save_state(state)
+    print(f"rebuilt {MIRROR} from the server: {len(server)} artifact(s), "
+          f"index.jsonl and {STATE} rewritten")
     return 0
 
 
@@ -294,7 +465,7 @@ def form_bundles(subs, record_names):
     return ordered, deferred
 
 
-def accept(canonical, record, muuids, stamp=None):
+def accept(canonical, record, muuids, state, stamp=None, submission_uuid=None):
     name = canonical["artifact"]["name"]
     canonical["artifact"]["created"] = stamp or datetime.now(timezone.utc).isoformat(timespec="seconds")
     if DRY:
@@ -307,7 +478,9 @@ def accept(canonical, record, muuids, stamp=None):
     for m, mu in muuids.items():
         if mu and not grant_read(uuid, mu):
             print(f"    ! could not grant READ to {m}")
-    write_record(canonical, uuid)
+    write_record(canonical, uuid, state)
+    if submission_uuid:
+        state["granted"][submission_uuid] = f"accepted as {name}"
     print(f"    ACCEPTED -> record {uuid}, {len(muuids)} read grants, mirrored")
     return True
 
@@ -339,41 +512,45 @@ def reject(canonical, submitted_name, findings, owner, muuids):
 
 def run_once():
     record = load_record()
-    names = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
+    state = load_state()
     members = set(MEMBERS) | {ADMIN_USER}
     muuids = member_uuids()
     print(f"gate: record holds {len(record)} artifact(s); members {sorted(members)}"
           + ("  [DRY RUN]" if DRY else ""))
 
-    # The mirror is how name uniqueness is enforced, so a mirror behind the server means
-    # this run could accept a name that already exists. Refuse rather than risk it: an
-    # immutable record that quietly gained a duplicate is not repairable afterwards.
-    ok, missing, extra = verify_mirror(record)
-    if ok is False:
-        print(f"  ! MIRROR IS BEHIND THE SERVER — {len(missing)} artifact(s) accepted "
-              f"previously are not in {MIRROR}:")
-        for n in sorted(missing)[:10]:
-            print(f"      {n}")
-        if len(missing) > 10:
-            print(f"      … and {len(missing) - 10} more")
-        print("  Name uniqueness is checked against the mirror, so running now could accept "
-              "a duplicate\n  name into an immutable record. Fix it first:\n"
+    # The mirror is how name uniqueness is enforced, so a mirror behind the server means this
+    # run could accept a name that already exists. Repair the gap and carry on; abort only if
+    # the repair fails, which is the only state in which a duplicate could actually slip in.
+    ok, added, unresolved, extra = checkpoint(record, state)
+    if added:
+        print(f"  mirror was behind by {len(added)}; fetched and repaired: "
+              f"{', '.join(sorted(added)[:5])}" + (" …" if len(added) > 5 else ""))
+    if unresolved:
+        print(f"  ! could not repair {len(unresolved)} admin-owned network(s): "
+              f"{', '.join(u[:8] for u in unresolved[:5])}")
+        print("  Name uniqueness is checked against the mirror, so running now could accept a "
+              "duplicate\n  name into an immutable record. Fix it first:\n"
               "      python gate.py --rebuild")
         return 1
     if extra:
         print(f"  note: {len(extra)} artifact(s) in the mirror are not on the server "
               f"(deleted there?): {', '.join(sorted(extra)[:5])}")
+    names = {r["artifact"]["name"] for r in record if r.get("artifact", {}).get("name")}
 
-    raw = discover()
-    print(f"gate: {len(raw)} visible submission(s)\n")
+    raw = discover(state)
+    print(f"gate: {len(raw)} new submission(s)\n")
 
+    # Everything below marks a submission as seen only when its disposition is FINAL. A
+    # transport failure is not final; a malformed name is.
     subs = []
     for s in raw:
         if s["name"] in names:
             print(f"  {s['name']}: already in the record — skipping")
+            state["granted"][s["uuid"]] = "already in the record"
             continue
-        canonical, na, err = _extract_full(s["uuid"])
-        if any((na or {}).get(m) for m in NON_ARTIFACT_MARKS):
+        canonical, na, err = _from_summary(s["uuid"], s.get("props"))
+        if any(_marked(na, m) for m in NON_ARTIFACT_MARKS):
+            state["granted"][s["uuid"]] = "non-artifact (role mark)"
             continue                       # a log or a report, whatever it is called
         if err:
             print(f"  {s['name']}: ! {err}")
@@ -381,9 +558,11 @@ def run_once():
         declared = canonical.get("artifact", {}).get("name")
         if declared != s["name"]:
             print(f"  {s['name']}: ! network name != artifact.name '{declared}'")
+            state["granted"][s["uuid"]] = "network name != artifact.name"
             continue
         if not declared.startswith(f"{s['owner']}_"):
             print(f"  {declared}: ! name is not prefixed with the owner '{s['owner']}_'")
+            state["granted"][s["uuid"]] = "name not prefixed with the owner"
             continue
         s["canonical"] = canonical
         subs.append(s)
@@ -417,7 +596,8 @@ def run_once():
             for m, f in results:
                 for x in f:
                     print(f"    [REVIEW {x['check']}] {x['msg'][:110]}")
-            ok = all(accept(m["canonical"], record, muuids, stamp=stamp) for m, _ in results)
+            ok = all(accept(m["canonical"], record, muuids, state, stamp=stamp,
+                            submission_uuid=m["uuid"]) for m, _ in results)
             if ok:
                 for m, f in results:
                     record.append(m["canonical"])
@@ -438,6 +618,11 @@ def run_once():
             for m, f in results:
                 if not passed(f):
                     reject(m["canonical"], m["name"], f, m["owner"], muuids)
+                    # Final: this network will never become acceptable, and a member fixing it
+                    # uploads a NEW one. Without this the same submission is re-rejected every
+                    # pass and a fresh reply network is posted each time.
+                    if not DRY:
+                        state["granted"][m["uuid"]] = "rejected"
                     telemetry.emit("gate", "gate_reject", "rejected", artifact=m["name"],
                                    atype=m["canonical"]["artifact"].get("type"),
                                    submitter=m["owner"], findings=f, refusal=["spec"],
@@ -449,6 +634,7 @@ def run_once():
                     telemetry.emit("gate", "gate_withhold", "withheld", artifact=m["name"],
                                    atype=m["canonical"]["artifact"].get("type"),
                                    submitter=m["owner"], findings=f, bundle=len(bundle))
+    save_state(state)
     return 0
 
 
@@ -456,13 +642,18 @@ if __name__ == "__main__":
     if "--rebuild" in sys.argv:
         sys.exit(rebuild_mirror())
     if "--verify" in sys.argv:
+        # Reports, repairs nothing: --verify is what you run when you want to know, and it
+        # should not change the thing it is reporting on.
         rec = load_record()
-        ok, missing, extra = verify_mirror(rec)
+        st_ = load_state()
+        ok, _added, unresolved, extra = checkpoint(rec, st_, repair=False)
         if ok is None:
             sys.exit(2)
         print(f"mirror {MIRROR}: {len(rec)} artifact(s)")
-        print(f"  missing from the mirror (on the server): {sorted(missing) or 'none'}")
-        print(f"  in the mirror only (not on the server):  {sorted(extra) or 'none'}")
-        print("OK" if ok else "MIRROR IS BEHIND THE SERVER — run: python gate.py --rebuild")
+        print(f"  on the server, unknown to the mirror: "
+              f"{[u[:8] for u in unresolved] or 'none'}")
+        print(f"  in the mirror only (not on the server): {sorted(extra) or 'none'}")
+        print("OK" if ok else
+              "MIRROR IS BEHIND THE SERVER — the next run repairs it, or: python gate.py --rebuild")
         sys.exit(0 if ok else 1)
     sys.exit(run_once())
