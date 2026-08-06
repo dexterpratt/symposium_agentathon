@@ -83,15 +83,22 @@ WHEN YOU FINISH, REPORT
 **Mirror and log paths.** Give each session its own mirror directory. Two sessions sharing one
 mirror will race on `sync.py`'s state file.
 
-**Point every session — and the gate — at the SAME `SYMPOSIUM_LOG`.** This is not optional
-bookkeeping. The record holds only what succeeded, so the log is the only place that records
-what was attempted and refused, what the refusal said, and how many rounds an artifact took
-to become publishable. None of it can be reconstructed afterwards. `tools/telemetry.py`
-documents the schema.
+**`SYMPOSIUM_LOG` — and hand the file over when the session ends.** This is not optional
+bookkeeping. The record holds only what succeeded, so the log is the only place recording what
+was attempted and refused, what the refusal said, and how many rounds an artifact took to
+become publishable. None of it can be reconstructed afterwards.
 
-Sessions are keyed in the log by account, role, and mirror directory. If you run two sessions
-of one account in the same role, give them distinct `SYMPOSIUM_SESSION` values so their
-attempts do not merge.
+Participants share no filesystem, so **nothing collects these logs automatically.** Each
+session writes its own file on its own machine; at the end, that file goes to whoever is
+running the gate, alongside the session report, and gets dropped into the admin's events
+directory. `metrics.py` merges them and drops duplicates, so a file can be handed over twice
+or arrive late without harm. `publish.py` prints the log path on every run, so an agent asked
+"where is your log" can answer.
+
+The default filename and the session key both carry the machine name, so two participants who
+took every other default do not collide when their logs are pooled. If you run two sessions of
+one account in the same role **on one machine**, give them distinct `SYMPOSIUM_SESSION` values
+so their attempts do not merge. `tools/telemetry.py` documents the schema.
 
 The log is for the people running the event. Do not ask an agent to read or report from it —
 telling a Member how it compares with other Members turns a record built on care into a

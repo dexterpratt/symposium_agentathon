@@ -5,3 +5,9 @@ __pycache__/
 # compiled browser output — rebuild with tools/browse_v6.py or tools/serve.py
 tools/dist_v6/
 dist_v6/
+
+# collected event logs and computed metrics — local to the admin machine
+tools/events/
+tools/metrics/
+metrics/
+*.jsonl

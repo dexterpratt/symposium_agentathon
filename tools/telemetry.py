@@ -16,8 +16,21 @@ What is worth measuring sits on either side of that:
     admits that two Grounds are not independent. Those are read from the record after the
     fact, not logged here.
 
-One line of JSON per event, append-only. Point every session at the same file
-(`SYMPOSIUM_LOG`) to get a single timeline for the day.
+One line of JSON per event, append-only.
+
+**There is no shared filesystem between participants.** A session's log is written on
+whatever machine ran it, so member-side refusals — the most valuable half — do not reach the
+admin machine by themselves. They have to be COLLECTED: at the end of a session, the log file
+is handed over alongside the session report, and dropped into the admin's events directory.
+`metrics.py` merges an arbitrary set of collected files and de-duplicates, so collection is
+nothing more than copying files into one place.
+
+Two consequences the defaults have to handle, because a collision here is silent:
+
+  * the default filename carries the hostname, so two participants handing over their logs
+    do not both hand over `symposium_events.jsonl`;
+  * the session key carries the hostname too, so two people who both used the default mirror
+    directory in the same role do not merge into one session when their logs are pooled.
 
 Deliberately NOT in the record: `role` is governance, and the specification keeps governance
 out of the CommunityRecord (S1.3). A refusal is not a published fact about a Member either —
@@ -47,26 +60,39 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 from datetime import datetime, timezone
 from pathlib import Path
 
-LOG = Path(os.environ.get("SYMPOSIUM_LOG", "./symposium_events.jsonl"))
+
+def _host():
+    """Short machine name — the only thing distinguishing two participants who took every
+    other default. Deterministic, so every command in a session agrees on it."""
+    try:
+        return re.sub(r"[^A-Za-z0-9_-]", "", socket.gethostname().split(".")[0])[:24] or "host"
+    except Exception:                                          # noqa: BLE001
+        return "host"
+
+
+LOG = Path(os.environ.get("SYMPOSIUM_LOG") or f"./symposium_events_{_host()}.jsonl")
 
 
 def session_id(actor, role=None):
     """A stable key for one session, without a clock or a random number.
 
-    `SYMPOSIUM_SESSION` if it is set — set it when two sessions of one account share a
-    role. Otherwise it is derived from the account, the role, and the mirror directory,
-    which the session template already tells you to give each session its own copy of.
-    Derived rather than generated so that every command in a session agrees on it without
-    having to pass anything around.
+    `SYMPOSIUM_SESSION` if it is set — set it when two sessions of one account share a role
+    on one machine. Otherwise it is derived from the account, the role, the machine, and the
+    mirror directory, which the session template already tells you to give each session its
+    own copy of. Derived rather than generated, so every command in a session agrees on it
+    without anything being passed around, and so a log collected from another machine keeps
+    its own identity when it is pooled with the rest.
     """
     explicit = os.environ.get("SYMPOSIUM_SESSION")
     if explicit:
         return explicit
     mirror = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record")).resolve().name
-    return f"{actor or '?'}:{role or '-'}:{mirror}"
+    return f"{actor or '?'}:{role or '-'}:{_host()}:{mirror}"
 
 
 def split_findings(findings):

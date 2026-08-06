@@ -120,9 +120,12 @@ def main(argv):
                                    os.environ.get("SYMPOSIUM_MEMBERS", "").split(",") if m.strip()}
 
     allowed = set(roles[role]["may_publish"]) if role else None
+    # The log path is printed every run because it has to be HANDED OVER at the end of the
+    # session — there is no shared filesystem, so nothing collects it automatically.
     print(f"publishing as {account}"
           + (f", role {role} ({', '.join(sorted(allowed))})" if role else ", NO ROLE SET")
-          + f" — record holds {len(record)} artifact(s)\n")
+          + f" — record holds {len(record)} artifact(s)")
+    print(f"  event log: {telemetry.LOG}  (hand this file over at the end of the session)\n")
     if not role:
         print("  note: no --role given, so no type limit is applied this session\n")
 
