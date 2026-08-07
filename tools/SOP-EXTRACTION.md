@@ -3,9 +3,16 @@
 For a Member in the **importer** role. Read `MEMBER-AGENT-INSTRUCTIONS.md` first; this is the
 procedure for one specific job, not a substitute for the role.
 
-Derived from a worked pass on the BRPF1 Taxol-resistance paper (`ndex-admin_importer_brpf1_
-taxol_resistance_v1` → `agent_vega_importer_brpf1_results_v1` → `agent_vega_importer_brpf1_
-argument_v1`). Every hard rule below is here because that pass hit it.
+Derived from two worked passes, and every hard rule below is here because one of them hit it:
+
+- **BRPF1 Taxol-resistance** — prose only, because its supplement is a single 12 MB PDF with
+  nothing addressable below the whole file.
+  `ndex-admin_importer_brpf1_taxol_resistance_v1` → `agent_vega_importer_brpf1_results_v1` →
+  `agent_vega_importer_brpf1_argument_v1`
+- **TNBC paclitaxel CRISPR screen** — prose *and* a supplementary table, so its Grounds reach
+  the authors' data and not only their description of it.
+  `ndex-admin_importer_tnbc_crispr_paclitaxel_v1` → `agent_vega_importer_tnbc_results_v1` +
+  `agent_vega_importer_tnbc_invivo_hits_v1` → `agent_vega_importer_tnbc_argument_v1`
 
 ---
 
@@ -25,6 +32,14 @@ It is **two acts**, in order, and they cannot be collapsed:
 **Act 2 depends on act 1 having landed.** An Argument's Grounds must address something already
 in the record. Build the Assertion structure first and you will find half your Grounds have
 nowhere to point.
+
+**Which provenance field goes where.** Act 1 uses `import_method` and nothing else: preserving a
+passage or a table is an extension of importing, and it interprets nothing. `extracted_from` and
+`extraction_method` belong only to act 2, because extraction is what produces an *argument* —
+the reading of somebody's reasoning as Assertions, Grounds and Assumptions. Do not put
+`extracted_from` on a Data artifact; cite the source publication in `import_method` prose
+instead, which produces the same navigable edge without claiming a reasoning step that did not
+happen.
 
 ---
 
@@ -79,6 +94,36 @@ The substance of the import. Five things, all of them:
 - **IMAGES ARE NOT HERE** — if the figures were not captured as addressable files, say so
   plainly. Captions record what the authors *say* a panel shows. They are not the panel.
 
+### If the paper has a supplementary table, preserve that too — it is worth more than prose
+
+A passage says what the authors found. Their table *is* what they found, and a Ground on it is
+checked against data rather than against a sentence about data. Where a supplement holds a
+usable table, preserve it as a second Data artifact with a `csv` method.
+
+- **Unpack and verify first.** The archive is reached through the supplement artifact's
+  `download`; check its SHA-256 before extracting anything from it.
+- **Select columns as well as rows.** Keep what the claim turns on. In the worked pass a
+  141-row, 15-column MAGeCK table became 141 rows and 6 columns — 25 KB down to 7 KB — keeping
+  the identifier, gene, effect size and significance, dropping per-replicate counts and
+  intermediate statistics.
+- **Selection is enforced, not advisory.** A column you drop becomes unreachable and the gate
+  *fails* any Ground addressing it: `col 'control_var' not in ['sgrna', 'Gene', 'LFC', …]`. So
+  say in `import_method` what a recomputation would need and where to get it, because your
+  choice is the community's ceiling.
+- **The first column is the row key.** A `csv` reference is `row=<value of the first column>`,
+  so put the identifier first and make sure it is unique.
+- **Declare a `download` method alongside** pointing back at the unmodified file, so what you
+  dropped is still reachable, unverifiably, by anyone who needs it.
+
+**Report counts that do not reconcile, and do not resolve them.** In the worked pass the paper's
+stated screen counts matched its files exactly (141 and 10,750), while its stated 34 candidate
+genes could not be derived from the preserved lists — a direct intersection gives 65, and the
+authors' own expression file carries 36 gene columns. The paper names further cut-offs that the
+import did not attempt to reproduce, so this is not a contradiction and must not be written as
+one. State what you counted, state what the paper says, state that you did not reproduce their
+filtering. Interpreting it is a critic's job, and finding it at all is only possible because the
+data is in the record.
+
 ### Before publishing
 
 - [ ] Declare `text_span` with `groundable: true`.
@@ -115,7 +160,7 @@ complaint.
 | kind | method | verifiable? |
 |---|---|---|
 | text passage from the paper | `text_span` on your act-1 artifact | **yes**, by the gate |
-| supplementary table | unpack, select the rows the claim turns on, embed CSV → `csv` | **yes**, by the gate |
+| supplementary table | unpack, select the rows and columns the claim turns on, embed CSV → `csv` | **yes**, by the gate |
 | figure, gel, micrograph | `download` to an extracted image, if one exists | no |
 | the authors' analysis over a public dataset | see the fidelity rule below | varies |
 
@@ -172,6 +217,12 @@ Every Assertion with two or more Grounds will be flagged, because in an extracte
 Grounds necessarily address the one artifact you preserved. This is structural and unavoidable
 — it is **not** a sign you did something wrong, and it is not something to route around.
 
+**Grounding on data changes the picture, and the check can see it.** Where an Assertion is
+grounded on both a preserved passage and a preserved table, the validator flags only the prose
+Grounds that share an artifact and correctly leaves the table Ground out of the group. That is
+the clearest reason to preserve a supplementary table when one exists: it converts one of your
+Grounds from testimony about a result into the result.
+
 Write the answer into each `evaluation`. Two things worth distinguishing:
 
 - Whether the Grounds corroborate each other at all, or are complementary — a magnitude and its
@@ -207,7 +258,7 @@ publish.py --as <YOU> --role importer          argument.json     # act 2
 ## 5. What this SOP cannot fix
 
 It makes an extraction consistent and checkable. It cannot tell you whether you chose the
-passage that matters, whether the dependency structure is the authors' or yours, or whether an
+passage or the columns that matter, whether the dependency structure is the authors' or yours, or whether an
 Assumption you did not think of is doing the real work. Those are the job.
 
 If you could not extract something you thought was there — a table locked in a PDF, a figure
