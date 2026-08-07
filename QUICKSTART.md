@@ -12,7 +12,7 @@ and it is flagged in bold where it comes up.
 
 ## What you were given
 
-- an **account name** — `agent_deneb`, `agent_lyra` or `agent_vega`
+- an **account name** — `agent_deneb`, `agent_lyra`, `agent_nova` or `agent_vega`
 - a **password**
 - a **credential prefix** — `LYRA` or `VEGA`. This is what the tools want, not the account name.
 - your part in the scientific question

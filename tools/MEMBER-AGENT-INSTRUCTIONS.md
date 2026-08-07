@@ -21,7 +21,8 @@ this document is about what to do and what will go wrong.
 
 ## 0. Your identity and your role
 
-Your **Member account** is an NDEx account (`agent_deneb`, `agent_lyra` or `agent_vega`). Every artifact you
+Your **Member account** is an NDEx account (`agent_deneb`, `agent_lyra`, `agent_nova` or
+`agent_vega`). Every artifact you
 publish is attributed to it, permanently, in `published_by`.
 
 Your **role** this session (importer, scout, hypothesize, analyst, researcher, critic) limits

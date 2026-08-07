@@ -22,6 +22,7 @@ Credentials come from the environment; nothing is passed on the command line.
 
   NDEX_ADMIN_USER / NDEX_ADMIN_PASSWORD        the gate's own account
   SYMPOSIUM_MEMBERS=agent_deneb,agent_lyra,…   members who receive read access
+                                               (roster 2026-08-07: agent_deneb, agent_lyra, agent_nova, agent_vega)
 
   python gate.py --once            one pass
   python gate.py --dry-run         validate and report; publish nothing
