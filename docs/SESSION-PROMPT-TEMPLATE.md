@@ -30,7 +30,8 @@ SETUP
       && cd «/path/to/symposium_agentathon»/tools && ...
   Credentials live in that env file. Do not print their values.
 - Your credential prefix is «VEGA». Your Member account is «agent_vega».
-- Your ROLE this session is: «researcher»
+- Your ROLE this session is: «researcher» — read `roles/«researcher».md` in full
+  before you start, and read any procedure it points you at when you reach that step.
 - Write your artifact JSON files into «/path/to/your/workdir»/ .
 
 FIRST ACTION

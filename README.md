@@ -284,7 +284,9 @@ spec/
 tools/                                your agent's working directory — everything it runs and reads
   MEMBER-AGENT-INSTRUCTIONS.md        ★ what your agent reads first
   CANONICAL-v6.md                     the JSON profile and the four addressing methods
-  roles.json                          the six roles: charters, limits, prohibitions
+  roles/                              one file per role: charter, guidance, contract
+  sop/                                procedures a role points at when a task needs one
+  policy/                             rules that apply whatever role you hold
   publish.py  sync.py  gate.py        the member loop, and the admin gate
   push_log.py  session_report.py     send a session's event log and its closing report
   collect_logs.py                     gather both, admin-side

@@ -11,10 +11,11 @@ ACCEPT means the gate will accept too. A rejection should be a surprise, not the
   python publish.py --as LYRA --role researcher --check  argument.json   # validate only
   python publish.py --as LYRA --role researcher          argument.json
   python publish.py --as LYRA --role analyst  run.json data.json         # one act, together
-  python publish.py --roles                                              # list the roles
+  python publish.py --roles                    # list the roles
+  python publish.py --roles importer           # print one in full
 
 A ROLE is not a MEMBER. One account operates in different roles in different sessions, and
-every artifact is attributed to the Member either way (roles.json). --role limits which
+every artifact is attributed to the Member either way (roles/). --role limits which
 Artifact types this session may publish. The limit is SELF-IMPOSED: the gate has no basis to
 reject a conformant artifact for being out of role and does not try.
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,16 +41,45 @@ from validate_v6 import (EMBED_REFUSE, EMBED_REVIEW, embedded_size, parse_instan
 
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
 ADMIN = os.environ.get("SYMPOSIUM_ADMIN", "ndex-admin")
-ROLES_PATH = Path(__file__).parent / "roles.json"
+ROLES_DIR = Path(__file__).parent / "roles"
+FENCE = re.compile(r"```json\s*\n(.*?)\n```", re.S)
 
 
 def load_roles():
-    try:
-        return {k: v for k, v in json.loads(ROLES_PATH.read_text()).items()
-                if not k.startswith("_")}
-    except Exception as e:
-        print(f"! cannot read {ROLES_PATH}: {e}")
-        return {}
+    """-> {name: contract}. One markdown file per role; the contract is its first ```json fence.
+
+    A directory rather than one roles.json, so that writing a role is copying a file rather than
+    editing a shared one — no registry to update, no merge conflict, and no way to damage five
+    other roles while editing a sixth. A fenced JSON block rather than front matter because this
+    is standard-library-only Python: `json.loads` on the fence is exact, where a hand-rolled YAML
+    parser would be a new way to be silently wrong about what a role permits.
+
+    Prose in the file is for the agent to read. Only the fence is read here, and only
+    `may_publish` and `must_not` are used at all.
+    """
+    out = {}
+    if not ROLES_DIR.is_dir():
+        print(f"! no roles directory at {ROLES_DIR}")
+        return out
+    for p in sorted(ROLES_DIR.glob("*.md")):
+        m = FENCE.search(p.read_text())
+        if not m:
+            continue                       # README.md and anything else without a contract
+        try:
+            c = json.loads(m.group(1))
+        except Exception as e:             # noqa: BLE001
+            print(f"! {p.name}: contract block is not valid JSON — {e}")
+            continue
+        name = c.get("role") or p.stem
+        if name != p.stem:
+            print(f"! {p.name}: contract says role '{name}' but the file is named "
+                  f"'{p.stem}' — using the filename")
+            name = p.stem
+        c.setdefault("must_not", [])
+        c.setdefault("may_publish", [])
+        c["_path"] = p
+        out[name] = c
+    return out
 
 
 def load_record():
@@ -66,8 +97,20 @@ def root(addr):
 def main(argv):
     roles = load_roles()
     if "--roles" in argv:
-        for name, r in roles.items():
+        # `--roles <name>` prints one in full, so an agent never hand-parses a file to find its
+        # own entry — the thing that made a single roles.json awkward to read.
+        after = argv[argv.index("--roles") + 1:]
+        want = after[0] if after and not after[0].startswith("-") else None
+        if want:
+            if want not in roles:
+                print(f"! unknown role '{want}'. Known: {', '.join(roles)}")
+                return 2
+            print(roles[want]["_path"].read_text())
+            return 0
+        for name, r in sorted(roles.items()):
             print(f"  {name:12} {', '.join(r['may_publish'])}\n               {r['purpose']}")
+        print(f"\n  python3 publish.py --roles <name>   print one in full "
+              f"({ROLES_DIR.name}/<name>.md)")
         return 0
     if "--as" not in argv:
         print(__doc__)
