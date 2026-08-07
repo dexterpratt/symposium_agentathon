@@ -625,10 +625,14 @@ def run_once():
         subs.append(s)
 
     bundles, deferred = form_bundles(subs, names)
-    for members, missing in deferred:
-        who = ", ".join(m["name"] for m in members)
+    # NOT `members`: that name holds the member-name set built above, and rebinding it here to a
+    # list of submissions made every later validate() call raise `unhashable type: 'dict'`. The
+    # gate then exited 1 on every pass and published nothing. It stayed hidden all day because it
+    # needs a pass that has BOTH a deferral and a bundle to validate.
+    for waiting, missing in deferred:
+        who = ", ".join(m["name"] for m in waiting)
         print(f"  DEFERRED {who}\n    waiting for: {', '.join(missing)} (single act, spec 1.8)")
-        for m in members:
+        for m in waiting:
             telemetry.emit("gate", "gate_defer", "deferred", artifact=m["name"],
                            atype=m["canonical"]["artifact"].get("type"),
                            submitter=m["owner"], waiting_for=sorted(missing))

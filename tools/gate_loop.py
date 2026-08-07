@@ -65,11 +65,19 @@ def main(argv=None):
           + ("  [DRY RUN]" if args.dry_run else "") + "\n  ctrl-c to stop\n", flush=True)
 
     passes = accepted = rejected = fails = 0
+    # A deferral is neither an acceptance nor a rejection, so a pass holding only deferrals used
+    # to print "nothing new" — the member waits indefinitely and the log says the gate is idle.
+    # The count now rides on every tick line; the detail prints only when the set CHANGES, so a
+    # deferral that persists does not repeat itself every `--every` seconds. Deferrals are
+    # deliberately NOT written to accepted.log: nothing was decided, and a standing deferral
+    # would otherwise append to that file on every pass for as long as it stood.
+    prev_deferred = None
     while True:
         passes += 1
         code, out = one_pass(args.dry_run)
         acc = re.findall(r"ACCEPTED -> record", out)
         rej = re.findall(r"REJECTED \((\d+) failures?\)", out)
+        dfr = sorted(re.findall(r"DEFERRED (\S+)", out))
         if code != 0:
             fails += 1
             print(f"[{now()}] gate exited {code} — NOT publishing. Output:", flush=True)
@@ -88,8 +96,15 @@ def main(argv=None):
         else:
             held = re.search(r"record holds (\d+)", out)
             print(f"[{now()}] nothing new ({held.group(1) if held else '?'} artifacts)"
+                  + (f"  [{len(dfr)} DEFERRED, waiting for a sibling]" if dfr else "")
                   + (f"  [{accepted} accepted, {rejected} rejected, {fails} errors so far]"
                      if passes % 10 == 0 else ""), flush=True)
+            if dfr and dfr != prev_deferred:
+                for line in out.splitlines():
+                    if "DEFERRED" in line or "waiting for:" in line:
+                        print("   " + line.rstrip(), flush=True)
+        if code == 0:
+            prev_deferred = dfr
 
         if args.once:
             return 0 if code == 0 else 1
