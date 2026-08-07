@@ -408,8 +408,21 @@ def check_argument(a):
                 cnt[r["target"]] = cnt.get(r["target"], 0) + 1
         for n in sorted(names):
             c = cnt.get(n, 0)
-            if c != 1:
-                f.append(finding("C-ARG", "FAIL", f"{kind} '{n}' bears on {c} Assertions (must be exactly 1)"))
+            if c == 0:
+                f.append(finding("C-ARG", "FAIL",
+                                 f"{kind} '{n}' bears on no Assertion — connect it with `{rel}` "
+                                 f"from the Assertion it supports, or remove it"))
+            elif c != 1:
+                # The remedy is not obvious from the count alone, and authors reasonably write one
+                # shared assumption for several Assertions. Say what to do and why (spec 2.2.4).
+                f.append(finding("C-ARG", "FAIL",
+                                 f"{kind} '{n}' bears on {c} Assertions (must be exactly 1) — give "
+                                 f"each Assertion its OWN {kind}, e.g. '{n}_1', '{n}_2'. Its "
+                                 f"rationale explains what THAT Assertion rests "
+                                 f"on, so one shared between two would have to mean two things at "
+                                 f"once. Where both rest on the same material the addresses "
+                                 f"coincide and the rationales differ, and that difference is the "
+                                 f"information worth recording (spec 2.2.4)"))
 
     # every Assertion has a basis
     basis = {r["source"] for r in rels if r.get("rel") in BASIS_RELS}
