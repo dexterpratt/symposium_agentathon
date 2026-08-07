@@ -177,7 +177,7 @@ they are enforced in your own tooling before submission, and the gate has no bas
 conformant artifact for being out of role. The point of the constraint is to make each session
 do one job well, not to police it.
 
-> **[DECIDE]** How many accounts exist, how they are allocated to participants, and whether
+> **[to be discussed with the group]** How many accounts exist, how they are allocated to participants, and whether
 > anyone runs more than one concurrent session.
 
 ### 4.2 The publish loop
@@ -289,7 +289,7 @@ specified`. If it does, everything else in this repo will run.
 **Credentials** are distributed on the day. They live in a file you source per command; nothing
 is pasted into a prompt and nothing is printed.
 
-> **[DECIDE]** Which agent tooling (Claude Code / Codex / either), how credentials are handed
+> we will discuss issues with which agent tooling (Claude Code / Codex / either), how credentials are handed
 > out, network assumptions, and the schedule.
 
 ---
@@ -332,4 +332,4 @@ This repository will be added to as the event approaches. Pull before you arrive
 
 ## 7. Questions before the day
 
-> **[DECIDE]** Where to send them.
+> **[TBD]** Where to send them.
