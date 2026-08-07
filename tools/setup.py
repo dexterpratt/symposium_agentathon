@@ -3,6 +3,7 @@
 
     python3 setup.py --as VEGA
     python3 setup.py --as VEGA --workdir ~/symposium-work
+    python3 setup.py --as VEGA --diagnose      # why won't it authenticate?
 
 Safe to run again at any time — it is idempotent, and re-running it is how you check that a
 setup still works.
@@ -122,6 +123,68 @@ def load_credentials(prefix):
     return None
 
 
+def diagnose(prefix):
+    """Say why authentication is failing, without printing a secret. -> exit code
+
+    Everything here reports SHAPE, never value: length, whether the characters are ordinary,
+    whether something invisible is on the end. Invisible trailing characters are the whole
+    reason this exists — a carriage return or a trailing space survives a copy-paste, shows up
+    in `env` as nothing at all, and makes a correct-looking password fail.
+    """
+    import unicodedata
+    user_var, pass_var = f"NDEX_{prefix}_USER", f"NDEX_{prefix}_PASSWORD"
+
+    def shape(v):
+        if v is None:
+            return "absent"
+        odd = [f"U+{ord(c):04X}" for c in v if not c.isprintable() or ord(c) > 126]
+        bits = [f"{len(v)} chars"]
+        if v != v.strip():
+            bits.append("!! LEADING/TRAILING WHITESPACE")
+        if odd:
+            bits.append(f"!! non-printable or non-ASCII: {', '.join(sorted(set(odd))[:4])}")
+        if any(unicodedata.category(c) == "Pi" or c in "‘’“”" for c in v):
+            bits.append("!! smart quotes")
+        return ", ".join(bits)
+
+    print(f"server       {BASE_URL()}")
+    for var in ("SYMPOSIUM_BASE", "NDEX_BASE"):
+        if os.environ.get(var):
+            print(f"  ! {var} is set to {os.environ[var]!r} — that overrides the default server")
+    print(f"file         {CRED}  ({'exists' if CRED.exists() else 'MISSING'})")
+    f = _entries(CRED.read_text()) if CRED.exists() else {}
+    for var in (user_var, pass_var):
+        fv, ev = f.get(var), os.environ.get(var)
+        print(f"\n  {var}")
+        print(f"    in file   {shape(fv)}")
+        print(f"    in shell  {shape(ev)}")
+        if fv is not None and ev is not None and fv != ev:
+            print(f"    !! THEY DIFFER — the shell is stale; open a new terminal")
+    if f.get(user_var) and not f[user_var].startswith("agent_"):
+        print(f"\n  !! {user_var} is {f[user_var]!r}, which does not look like an account name.\n"
+              f"     It should be the account (e.g. agent_deneb), not the prefix ({prefix}).")
+
+    print("\nauthentication")
+    for label, vals in (("file", f), ("shell", os.environ)):
+        u, p = vals.get(user_var), vals.get(pass_var)
+        if not u or not p:
+            print(f"  {label:6s} incomplete")
+            continue
+        import base64
+        sys.path.insert(0, str(TOOLS))
+        import ndex_io
+        tok = base64.b64encode(f"{u}:{p}".encode()).decode()
+        me = ndex_io.whoami(tok)
+        print(f"  {label:6s} {'OK — ' + me['userName'] if me.get('userName') else 'REJECTED'}")
+    return 0
+
+
+def BASE_URL():
+    sys.path.insert(0, str(TOOLS))
+    import ndex_io
+    return ndex_io.BASE
+
+
 def whoami(prefix):
     """-> (account, error). Authenticates. Prints nothing."""
     sys.path.insert(0, str(TOOLS))
@@ -175,10 +238,14 @@ def main(argv=None):
     ap.add_argument("--workdir", default="~/symposium-work",
                     help="where your artifacts, mirror and log live (default: ~/symposium-work)")
     ap.add_argument("--members", default=DEFAULT_MEMBERS)
+    ap.add_argument("--diagnose", action="store_true",
+                    help="explain why authentication is failing; prints no secrets")
     args = ap.parse_args(argv)
     prefix = args.prefix.upper()
 
     print(f"Symposium setup — credential prefix {prefix}\n")
+    if args.diagnose:
+        return diagnose(prefix)
 
     # 1. credentials --------------------------------------------------------------------
     ok, msg = ensure_credentials(prefix)
