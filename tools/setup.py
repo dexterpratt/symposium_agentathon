@@ -94,12 +94,32 @@ def ensure_credentials(prefix):
     return True, f"{CRED} has {user_var} and {pass_var}"
 
 
-def load_credentials():
-    """Read the credentials file into os.environ without echoing anything."""
+def load_credentials(prefix):
+    """Load the credentials file into os.environ, OVERRIDING what is already there.
+
+    Overriding, not setdefault. The whole documented recovery loop is "edit the file and run
+    this again" — and a participant does that in the terminal they are already in, which has
+    very often already sourced the old file. With setdefault, the stale value in the shell wins,
+    the edit appears to do nothing, and the error tells them to check a file that is now
+    correct. That is a loop with no exit, hit at the exact moment someone is already unsure
+    whether they typed their password right.
+
+    -> a note if the shell disagreed with the file, so the participant knows their CURRENT
+    shell is stale even though this run succeeded. Values are never printed.
+    """
     if not CRED.exists():
-        return
+        return None
+    stale = []
     for k, v in _entries(CRED.read_text()).items():
-        os.environ.setdefault(k, v)
+        if k in os.environ and os.environ[k] != v:
+            stale.append(k)
+        os.environ[k] = v
+    mine = [k for k in stale if k.startswith(f"NDEX_{prefix}_")]
+    if mine:
+        return (f"note: {', '.join(mine)} already had a DIFFERENT value in this shell; the "
+                f"file wins here, but that shell is stale — open a new terminal, or re-source "
+                f"the file, before running anything else")
+    return None
 
 
 def whoami(prefix):
@@ -185,10 +205,17 @@ def main(argv=None):
         return 2
 
     # 2. authenticate -------------------------------------------------------------------
-    load_credentials()
+    note = load_credentials(prefix)
+    if note:
+        print(f"  environment  {note}")
     account, err = whoami(prefix)
     if err:
         print(f"  account      ! {err}")
+        print(f"               The file itself parses and contains both values, so if you have\n"
+              f"               just corrected it, the correction WAS read — the server rejected\n"
+              f"               what it now says. Check for a typo in the password, and that the\n"
+              f"               username is the account name (e.g. agent_deneb) and not the\n"
+              f"               prefix ({prefix}).")
         return 1
     print(f"  account      authenticated as {account}")
 
