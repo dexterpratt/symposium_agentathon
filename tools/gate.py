@@ -27,6 +27,7 @@ Credentials come from the environment; nothing is passed on the command line.
   python gate.py --dry-run         validate and report; publish nothing
   python gate.py --verify          report mirror vs server; repair nothing, publish nothing
   python gate.py --rebuild         rebuild the mirror from the server, then exit
+  python gate.py --grant <member>  give a NEW member READ on everything already accepted
 
 THE MIRROR IS A CACHE, NOT THE RECORD. Every accepted artifact is uploaded as an
 admin-owned network carrying its whole canonical JSON, and the account listing returns that
@@ -364,6 +365,41 @@ def checkpoint(record, state, repair=True):
     return (not unresolved), added, unresolved, extra
 
 
+def grant_backfill(member):
+    """Give a member READ on every artifact already in the record. -> exit code
+
+    Read access fans out at ACCEPT time, to whoever was in SYMPOSIUM_MEMBERS when the gate ran.
+    A Member added later therefore holds grants on nothing published before they existed — and
+    because discovery is the permission map, `sync.py` reports an empty record rather than an
+    error. It looks exactly like a broken install.
+
+    So adding a Member is two steps: create the account, then run this. It is idempotent.
+    """
+    uuid = user_uuid(member, ADMIN_TOK)
+    if not uuid:
+        print(f"! no such account '{member}' on {BASE}\n"
+              f"  The account must exist before it can be granted anything. Self-signup is "
+              f"disabled on this deployment, so an administrator creates it.")
+        return 1
+    server, err = server_record()
+    if server is None:
+        print(f"! {err}")
+        return 1
+    ok = fail = 0
+    for name, (net, _canonical) in sorted(server.items()):
+        if grant_read(net, uuid):
+            ok += 1
+        else:
+            fail += 1
+            print(f"  ! could not grant READ on {name}")
+    print(f"granted {member} READ on {ok} artifact(s)" + (f", {fail} FAILED" if fail else ""))
+    if fail:
+        return 1
+    print(f"\nAdd them to the gate's environment so future acceptances include them:\n"
+          f"    export SYMPOSIUM_MEMBERS={','.join(sorted(set(MEMBERS) | {member}))}")
+    return 0
+
+
 def rebuild_mirror():
     """Write the server's record back into the mirror. Never deletes anything local.
 
@@ -639,6 +675,11 @@ def run_once():
 
 
 if __name__ == "__main__":
+    if "--grant" in sys.argv:
+        i = sys.argv.index("--grant") + 1
+        if i >= len(sys.argv):
+            sys.exit("usage: python gate.py --grant <member-account>")
+        sys.exit(grant_backfill(sys.argv[i]))
     if "--rebuild" in sys.argv:
         sys.exit(rebuild_mirror())
     if "--verify" in sys.argv:
