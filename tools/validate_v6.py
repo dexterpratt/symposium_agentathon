@@ -574,11 +574,33 @@ def check_corpus(a, index, members, record_names):
         check_addr(h["produced_by"], "header produced_by", False, ordered=False)
     if h.get("extracted_from"):
         check_addr(h["extracted_from"], "header extracted_from", False)
-    for v in (h.get("outputs") or []):
-        check_addr(v, "header outputs", False, ordered=False)
+    def each_address(hk, ordered=True):
+        """Walk a header field that holds a LIST of addresses.
+
+        A string is iterable, so `for v in h[hk]` walked it CHARACTER BY CHARACTER and reported
+        `malformed address 'e'` once per letter — around twenty findings for one mistake, not
+        one of them naming the actual error. On 2026-08-07 that was 42% of every local
+        validation failure logged during the event, and the second largest cost in the whole
+        publishing loop after a stale mirror.
+        """
+        v = h.get(hk)
+        if v is None or v == []:
+            return
+        if isinstance(v, str):
+            f.append(finding("STRUCT", "FAIL",
+                             f"header {hk} must be a LIST of addresses, not a string — "
+                             f'write ["{v}"] rather than "{v}"'))
+            return
+        if not isinstance(v, list):
+            f.append(finding("STRUCT", "FAIL",
+                             f"header {hk} must be a list of addresses, got {type(v).__name__}"))
+            return
+        for a in v:
+            check_addr(a, f"header {hk}", False, ordered=ordered)
+
+    each_address("outputs", ordered=False)
     for hk in ("supersedes", "inputs", "used_models", "recipients"):
-        for v in (h.get(hk) or []):
-            check_addr(v, f"header {hk}", False)
+        each_address(hk)
 
     for n, o in objs.items():
         if o["type"] == "Ground":
