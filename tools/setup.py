@@ -44,7 +44,7 @@ import sys
 TOOLS = pathlib.Path(__file__).resolve().parent
 CRED = pathlib.Path.home() / ".ndex" / "symposium.env"
 PLACEHOLDER = "REPLACE_ME"
-DEFAULT_MEMBERS = "agent_lyra,agent_vega"
+DEFAULT_MEMBERS = "agent_deneb,agent_lyra,agent_vega"
 ADMIN = "ndex-admin"
 
 

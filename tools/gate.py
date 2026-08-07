@@ -21,7 +21,7 @@ Four server facts this is built around, all established empirically on build ac3
 Credentials come from the environment; nothing is passed on the command line.
 
   NDEX_ADMIN_USER / NDEX_ADMIN_PASSWORD        the gate's own account
-  SYMPOSIUM_MEMBERS=agent_lyra,agent_vega      members who receive read access
+  SYMPOSIUM_MEMBERS=agent_deneb,agent_lyra,…   members who receive read access
 
   python gate.py --once            one pass
   python gate.py --dry-run         validate and report; publish nothing
@@ -64,6 +64,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -375,11 +376,29 @@ def grant_backfill(member):
 
     So adding a Member is two steps: create the account, then run this. It is idempotent.
     """
-    uuid = user_uuid(member, ADMIN_TOK)
+    # A newly created account is NOT immediately visible to /v2/user?username=. Observed
+    # 2026-08-06: an account created and reported as isVerified:true still resolved as absent
+    # when the grant was attempted moments later, and resolved normally minutes afterwards.
+    # This is the same class of lag as the ~2s a fresh network takes to become readable, and it
+    # arrives at exactly the wrong moment — right after someone creates an account, when
+    # "no such account" reads as "the creation silently failed."
+    uuid = None
+    for attempt in range(6):
+        uuid = user_uuid(member, ADMIN_TOK)
+        if uuid:
+            if attempt:
+                print(f"  ('{member}' resolved on attempt {attempt + 1} — new accounts take a "
+                      f"moment to become visible)")
+            break
+        if attempt < 5:
+            time.sleep(5)
     if not uuid:
-        print(f"! no such account '{member}' on {BASE}\n"
-              f"  The account must exist before it can be granted anything. Self-signup is "
-              f"disabled on this deployment, so an administrator creates it.")
+        print(f"! '{member}' does not resolve on {BASE} after 30s of retries.\n"
+              f"  If you have JUST created it, wait a minute and run this again — a new account\n"
+              f"  is not immediately visible, and this failure looks identical to one that\n"
+              f"  never got created.\n"
+              f"  If it persists, the account does not exist. Self-signup is disabled on this\n"
+              f"  deployment, so an administrator has to create it.")
         return 1
     server, err = server_record()
     if server is None:
