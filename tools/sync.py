@@ -129,6 +129,36 @@ def fetch_new(tok, state):
     return found, True, ""
 
 
+def _root(addr):
+    """Artifact name at the head of an address."""
+    return str(addr).lstrip("@").split("#")[0].split(".")[0]
+
+
+def bundles_of(found):
+    """Group what arrived into publication units, the way gate.py forms them to accept.
+
+    An Analysis and the Artifacts it produces are ONE act (spec 1.8) and carry mutual
+    `outputs`/`produced_by` addresses, so neither validates alone. Validating them one at a
+    time — which is what this did — defers whichever half is tried first for the sibling that
+    has not been applied yet, then defers the other for the first. Nothing is ever marked seen,
+    so the pair retries and fails on every pass, forever.
+
+    That made every analysis bundle in the record permanently invisible in every member's
+    mirror and browser: 13 artifacts across four accounts on 2026-08-07, including each
+    member's own accepted work. Nothing needed republishing — they were accepted all along.
+
+    A bundle sorts by its earliest `created` so the record's total order is preserved across
+    bundles, which is what lets an Argument resolve the Data it grounds on.
+    """
+    groups = {}
+    for f in found:
+        h = f["canonical"]["artifact"]
+        leader = _root(h["produced_by"]) if h.get("produced_by") else h["name"]
+        groups.setdefault(leader, []).append(f)
+    return sorted(groups.values(),
+                  key=lambda g: min(x["canonical"]["artifact"].get("created") or "" for x in g))
+
+
 def apply(found, state):
     """Validate and write, oldest first. -> (added, dirty, deferred)."""
     record = load_record()
@@ -141,23 +171,41 @@ def apply(found, state):
     found.sort(key=lambda f: f["canonical"]["artifact"].get("created") or "")
 
     added, dirty, deferred = [], set(), []
-    for f in found:
-        c = f["canonical"]
-        name = c["artifact"]["name"]
-        if name in names:
+    for bundle in bundles_of(found):
+        fresh = []
+        for f in bundle:
+            name = f["canonical"]["artifact"]["name"]
+            if name in names:
+                state["seen"][f["uuid"]] = name
+            else:
+                fresh.append(f)
+        if not fresh:
+            continue
+
+        # Each member is validated against the record PLUS its siblings, so the mutual
+        # outputs/produced_by addresses resolve — the same construction as gate.py.
+        sibs = [f["canonical"] for f in fresh]
+        results = [(f, validate(f["canonical"], record + [c for c in sibs if c is not f["canonical"]],
+                                members)) for f in fresh]
+
+        if not all(passed(fd) for _, fd in results):
+            # One act: hold the whole unit rather than write half of it. Usually a dependency
+            # that has not arrived yet — retry next tick rather than drop.
+            for f, fd in results:
+                if not passed(fd):
+                    deferred.append((f["canonical"]["artifact"]["name"],
+                                     [x["msg"] for x in fd if x["level"] == "FAIL"][:2]))
+            continue
+
+        for f in fresh:
+            c = f["canonical"]
+            name = c["artifact"]["name"]
+            (MIRROR / f"{name}.json").write_text(json.dumps(c, indent=2) + "\n")
             state["seen"][f["uuid"]] = name
-            continue
-        findings = validate(c, record, members)
-        if not passed(findings):
-            # usually a dependency that has not arrived yet — retry next tick rather than drop
-            deferred.append((name, [x["msg"] for x in findings if x["level"] == "FAIL"][:2]))
-            continue
-        (MIRROR / f"{name}.json").write_text(json.dumps(c, indent=2) + "\n")
-        state["seen"][f["uuid"]] = name
-        record.append(c)
-        names.add(name)
-        added.append(name)
-        dirty |= {name} | (outbound(c) & names)     # its own page + every page it points at
+            record.append(c)
+            names.add(name)
+            added.append(name)
+            dirty |= {name} | (outbound(c) & names)  # its own page + every page it points at
     return added, dirty, deferred
 
 
