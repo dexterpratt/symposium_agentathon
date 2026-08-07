@@ -309,6 +309,7 @@ tools/                                your agent's working directory — everyth
   preflight.py                        can this machine reach the server? no account needed
   setup.py                            one-time participant setup; writes env.sh
   publish.py  sync.py  gate.py        the member loop, and the admin gate
+  gate_loop.py                        run the gate on a cadence; logs to accepted.log
   push_log.py  session_report.py     send a session's event log and its closing report
   collect_logs.py                     gather both, admin-side
   admin_publish.py                    publish as the admin, straight into the record
