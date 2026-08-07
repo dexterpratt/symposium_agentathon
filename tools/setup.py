@@ -147,6 +147,16 @@ def diagnose(prefix):
             bits.append("!! smart quotes")
         return ", ".join(bits)
 
+    def fingerprint(v):
+        """Six hex characters derived from a value, for comparing the SAME credential across
+        two machines by eye. Compare it yourself; do not send it to anyone. Matching lengths
+        prove nothing — two 7-character passwords differing by one transposed key look
+        identical in every other line of this report."""
+        if not v:
+            return "--------"
+        import hashlib
+        return hashlib.sha256(("symposium-fingerprint:" + v).encode()).hexdigest()[:6]
+
     print(f"server       {BASE_URL()}")
     for var in ("SYMPOSIUM_BASE", "NDEX_BASE"):
         if os.environ.get(var):
@@ -156,14 +166,18 @@ def diagnose(prefix):
     for var in (user_var, pass_var):
         fv, ev = f.get(var), os.environ.get(var)
         print(f"\n  {var}")
-        print(f"    in file   {shape(fv)}")
-        print(f"    in shell  {shape(ev)}")
+        print(f"    in file   {shape(fv)}   fingerprint {fingerprint(fv)}")
+        print(f"    in shell  {shape(ev)}   fingerprint {fingerprint(ev)}")
         if fv is not None and ev is not None and fv != ev:
             print(f"    !! THEY DIFFER — the shell is stale; open a new terminal")
     if f.get(user_var) and not f[user_var].startswith("agent_"):
         print(f"\n  !! {user_var} is {f[user_var]!r}, which does not look like an account name.\n"
               f"     It should be the account (e.g. agent_deneb), not the prefix ({prefix}).")
 
+    print("\n  Compare the fingerprints with the SAME command on a machine where this account\n"
+          "  works. Same value -> same six characters. Matching LENGTHS prove nothing: two\n"
+          "  7-character passwords differing by one transposed key look identical everywhere\n"
+          "  else in this report. Compare them yourself — do not send them to anyone.")
     print("\nauthentication")
     for label, vals in (("file", f), ("shell", os.environ)):
         u, p = vals.get(user_var), vals.get(pass_var)
