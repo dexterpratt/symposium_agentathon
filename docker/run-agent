@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT="${AGENT:-codex}"
+PROMPT="${PROMPT:-}"
+
+cd /workspace/symposium_agentathon
+
+# Optional: start each run from latest main
+git fetch origin
+git pull --ff-only origin main
+
+case "$AGENT" in
+  codex)
+    exec codex exec \
+      --sandbox workspace-write \
+      "$PROMPT"
+    ;;
+
+  claude)
+    exec claude \
+      -p "$PROMPT" \
+      --permission-mode acceptEdits \
+      --output-format json
+    ;;
+
+  *)
+    echo "Unknown AGENT: $AGENT" >&2
+    exit 1
+    ;;
+esac
