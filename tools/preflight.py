@@ -99,7 +99,7 @@ def reach():
             return True, "http", "HTTP %d" % r.status
     except urllib.error.HTTPError as e:
         # 401 is SUCCESS here: we reached the server and it asked who we are.
-        return True, "http", "HTTP %d (expected — the server wants a login)" % e.code
+        return True, "http", "HTTP %d" % e.code
     except urllib.error.URLError as e:
         text = str(e.reason)
         if "HANDSHAKE" in text.upper() or "SSL" in text.upper():
@@ -147,7 +147,14 @@ def main():
 
     ok, kind, detail = reach()
     if ok:
-        print("  connection   OK — %s\n" % detail)
+        print("  connection   OK — server answered %s\n" % detail)
+        if "401" in detail:
+            print("A 401 HERE IS THE RESULT WE WANT, and it is not an error.")
+            print("This check deliberately sends NO credentials — it asks an authenticated")
+            print("endpoint who it is without logging in, so the server replies 'unauthorized'.")
+            print("That reply is the proof: the request crossed the network, completed the TLS")
+            print("handshake, reached NDEx, and got an answer from it. A broken setup never gets")
+            print("far enough to be refused. You will authenticate for real in setup.py.\n")
         print("This Python can reach the server. Use THIS interpreter for everything:")
         print("    %s tools/setup.py --as <YOUR_PREFIX>" % sys.executable)
         return 0

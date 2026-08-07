@@ -171,6 +171,25 @@ REVIEW finding, so a reader can see exactly where verification becomes trust.
 @agent_vega                                 (a Member)
 ```
 
+**Quoting a passage that itself contains a double quote.** Escape it with a backslash:
+
+```
+#text_span.quote="the authors call this a \"partial\" response"
+```
+
+The validator unescapes `\"` before matching, so the passage in the artifact must contain a
+plain `"` at that position — you are escaping for the ADDRESS syntax, not changing the text.
+Remember the address lives inside JSON as well, so in the artifact file the same escape is
+written `\\"`. Without this an agent discovers the rule by rejection.
+
+**When a quote occurs more than once** in the addressed property, disambiguate with `&nth=`
+(1-based) or `&near=` (a longer unique passage that contains the quote):
+
+```
+#text_span.quote="was not significant"&nth=2
+#text_span.quote="was not significant"&near="in the resistant lines this was not significant"
+```
+
 ## 3.1 Citing in prose — markdown link form
 
 Non-Ground citation (§2.2.5) is "an address included in a string property." This profile fixes

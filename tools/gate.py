@@ -507,10 +507,11 @@ def form_bundles(subs, record_names):
 
     ordered, placed, pending = [], set(record_names), list(bundles)
     while pending:
-        ready = [b for b in pending if refs(b) <= placed | (set(by_name) - {
-            m["canonical"]["artifact"]["name"] for bb in pending for m in bb})]
-        ready = [b for b in pending if not (refs(b) & {
-            m["canonical"]["artifact"]["name"] for bb in pending for m in bb} - placed)]
+        # Ready = nothing this bundle references is still sitting unplaced in `pending`.
+        # References to artifacts already in the record, or to names not submitted at all, do
+        # not block: the validator decides whether those resolve, not the ordering.
+        unplaced = {m["canonical"]["artifact"]["name"] for bb in pending for m in bb} - placed
+        ready = [b for b in pending if not (refs(b) & unplaced)]
         if not ready:                      # a cycle among submissions; fall back to given order
             ready = pending[:1]
         for b in ready:

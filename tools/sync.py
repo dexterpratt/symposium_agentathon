@@ -82,15 +82,25 @@ def outbound(canonical):
 
 
 def fetch_new(tok, state):
-    """-> list of {uuid, canonical} for record artifacts not yet held locally."""
+    """-> (list of {uuid, canonical} not yet held locally, reachable, why).
+
+    `reachable` is separate from an empty list ON PURPOSE. Previously any failure — TLS
+    handshake, bad credentials, HTTP error — returned [], `once` saw nothing added, and
+    printed "up to date". A frozen mirror and a current one were indistinguishable in the
+    output, the exit code, and in --watch, which swallowed it every 30 seconds.
+
+    That is the exact state the instructions warn hardest about: validation is only as good as
+    the record it can see, and a stale mirror approves an artifact that reuses a name someone
+    else just took. The gate catches the collision hours later.
+    """
     me = whoami(tok)
     if not me:
-        print("! could not authenticate")
-        return []
+        return [], False, ("could not authenticate — this may be the credentials, but a TLS or "
+                           "network fault looks identical here; run preflight.py to tell them "
+                           "apart")
     st, perms = api("GET", f"/v2/user/{me['externalId']}/permission?type=NETWORK", tok)
     if st != 200 or not isinstance(perms, dict):
-        print(f"! permission listing failed: HTTP {st}")
-        return []
+        return [], False, f"permission listing failed: HTTP {st}"
 
     held = set(state["seen"])
     found = []
@@ -116,7 +126,7 @@ def fetch_new(tok, state):
             print(f"  ! {s.get('name')}: {err}")
             continue
         found.append({"uuid": uuid, "canonical": canonical})
-    return found
+    return found, True, ""
 
 
 def apply(found, state):
@@ -163,7 +173,14 @@ def write_manifest(state, added, dirty, total):
 
 
 def once(tok, state):
-    found = fetch_new(tok, state)
+    found, reachable, why = fetch_new(tok, state)
+    if not reachable:
+        held = len(load_record())
+        print(f"! COULD NOT REACH THE SERVER — {why}")
+        print(f"  Your mirror is UNCHANGED at {held} artifact(s) and may now be STALE.")
+        print(f"  Do not publish against it: validation can only see the record it has, so a")
+        print(f"  stale mirror will approve a name someone else has already taken.")
+        return None
     added, dirty, deferred = apply(found, state)
     for name, why in deferred:
         print(f"  deferred {name}: {why[0] if why else 'unresolved'}")
@@ -186,14 +203,23 @@ def main(argv):
 
     if "--watch" not in argv:
         n = once(tok, state)
+        if n is None:
+            return 1                       # unreachable: never report a stale mirror as fine
         if not n:
             print(f"  up to date — {len(load_record())} artifact(s)")
         return 0
 
     print(f"watching {MIRROR} (every {POLL}s) — ctrl-c to stop")
+    misses = 0
     while True:
         try:
-            once(tok, state)
+            if once(tok, state) is None:
+                misses += 1
+                if misses in (1, 5) or misses % 20 == 0:
+                    print(f"  ({misses} consecutive failed poll(s) — the mirror is not being "
+                          f"updated)")
+            else:
+                misses = 0
         except KeyboardInterrupt:
             return 0
         except Exception as e:

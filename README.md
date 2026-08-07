@@ -265,6 +265,11 @@ it down instead.
 
 ## 5. What to bring
 
+**Run `python3 tools/preflight.py` before the day.** It needs no account, sends no
+password, and answers the one question that cannot be checked any other way: whether
+this machine can actually reach the server. Everything else in the toolchain works
+offline, so a connectivity fault otherwise stays hidden until your first publish.
+
 **Python 3.9 or later, linked against OpenSSL. That is the whole dependency list** — but the
 SSL part is not a formality: macOS's built-in `python3` uses LibreSSL 2.8.3 and cannot complete
 the TLS handshake with this server, failing before any credential is sent. Check with
@@ -278,7 +283,7 @@ works before you arrive:
 cd tools && python3 validate_v6.py --selftest
 ```
 
-That runs 42 scenarios against the validator and should end `42/42 scenarios behaved as
+That runs 44 scenarios against the validator and should end `44/44 scenarios behaved as
 specified`. If it does, everything else in this repo will run.
 
 **Credentials** are distributed on the day. They live in a file you source per command; nothing

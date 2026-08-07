@@ -25,10 +25,13 @@ and publish it to a shared, permanent record.
 SETUP
 - Working directory: «/path/to/symposium_agentathon»/tools
 - Begin every shell command with:
-    source ~/.ndex/symposium.env && export SYMPOSIUM_MIRROR=«/path/to/your/mirror» \
-      SYMPOSIUM_LOG=«/path/to/your/log.jsonl» SYMPOSIUM_MEMBERS=agent_lyra,agent_vega \
-      && cd «/path/to/symposium_agentathon»/tools && ...
-  Credentials live in that env file. Do not print their values.
+    source «/path/to/your/workdir»/env.sh && ...
+  That one file sets everything: credentials, mirror, log, members, and SYMPOSIUM_PY.
+- Run every tool as "$SYMPOSIUM_PY", NOT as python3. env.sh records the interpreter that
+  was verified to reach the server; on a Mac `python3` is often the built-in one, which
+  cannot complete the TLS handshake and fails in a way that looks like a bad password.
+    "$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/sync.py" --as «VEGA»
+  Credentials live in the env file. Do not print their values.
 - Your credential prefix is «VEGA». Your Member account is «agent_vega».
 - Your ROLE this session is: «researcher» — read `roles/«researcher».md` in full
   before you start, and read any procedure it points you at when you reach that step.

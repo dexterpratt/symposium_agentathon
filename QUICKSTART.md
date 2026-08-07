@@ -96,7 +96,9 @@ typing the password into it.
 
 You now have a working directory at `~/symposium-work` holding your copy of the shared record,
 your event log, and the artifacts you will write. Every command from here starts with
-`source ~/symposium-work/env.sh`, which your assistant will do automatically.
+`source ~/symposium-work/env.sh`, which your assistant will do automatically. After that, use
+**`"$SYMPOSIUM_PY"`** rather than `python3` — env.sh records the interpreter that was verified
+to reach the server, and on a Mac plain `python3` is often a different one that cannot.
 
 **If it says the server did not accept those credentials**, the username or password in the file
 is wrong. That is the likeliest thing to go wrong, and it is not your fault or your assistant's
@@ -106,7 +108,7 @@ is wrong. That is the likeliest thing to go wrong, and it is not your fault or y
 
 ```bash
 source ~/symposium-work/env.sh
-python3 "$SYMPOSIUM_TOOLS/serve.py" "$SYMPOSIUM_MIRROR" --port 8760
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/serve.py" "$SYMPOSIUM_MIRROR" --port 8760
 ```
 
 Then open <http://localhost:8760>. Leave it open — it rebuilds itself as the day goes on.
@@ -145,8 +147,8 @@ and paste it.
 Pick the role first, because it decides what the session may publish:
 
 ```bash
-python3 "$SYMPOSIUM_TOOLS/publish.py" --as VEGA --roles           # list them
-python3 "$SYMPOSIUM_TOOLS/publish.py" --as VEGA --roles importer  # read one
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/publish.py" --as VEGA --roles           # list them
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/publish.py" --as VEGA --roles importer  # read one
 ```
 
 Roughly: **importer** brings outside material in; **scout** surveys what exists; **hypothesize**
@@ -212,7 +214,7 @@ After publishing, the artifact does **not** appear immediately. A gate process �
 organisers, not by you — validates submissions on its own schedule. Publish, wait, sync again:
 
 ```bash
-python3 "$SYMPOSIUM_TOOLS/sync.py" --as VEGA
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/sync.py" --as VEGA
 ```
 
 If several minutes pass with neither your artifact accepted nor a reply explaining a rejection,
@@ -228,8 +230,8 @@ clever way around a check has done real damage that will not be visible until la
 At the end of a session, have it run:
 
 ```bash
-python3 "$SYMPOSIUM_TOOLS/session_report.py" --as VEGA --send
-python3 "$SYMPOSIUM_TOOLS/push_log.py"       --as VEGA
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/session_report.py" --as VEGA --send
+"$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/push_log.py"       --as VEGA
 ```
 
 The fourth question in that report — *what did you want to express scientifically and could

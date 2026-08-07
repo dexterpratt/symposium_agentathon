@@ -335,7 +335,11 @@ def write_env(workdir, prefix, account, members):
 # Use it at the start of every shell command:
 #
 #     source {env}
-#     python3 "$SYMPOSIUM_TOOLS/publish.py" --as {prefix} --role importer --check my_artifact.json
+#     "$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/publish.py" --as {prefix} --role importer --check art.json
+#
+# SYMPOSIUM_PY is the interpreter that was verified to reach the server when this file was
+# written. Use it rather than `python3`: on a Mac `python3` is often the built-in one, which
+# cannot complete the TLS handshake — and the failure looks like a rejected password.
 #
 # Do not edit SYMPOSIUM_MIRROR to point somewhere else. Validation is only as good as the
 # record it can see: aimed at an empty directory it approves duplicate names and unresolvable
@@ -345,6 +349,7 @@ set -a
 . "{CRED}"
 set +a
 
+export SYMPOSIUM_PY="{sys.executable}"
 export SYMPOSIUM_TOOLS="{TOOLS}"
 export SYMPOSIUM_MIRROR="{workdir / 'record'}"
 export SYMPOSIUM_LOG="{workdir / 'events.jsonl'}"
@@ -442,14 +447,17 @@ Done. From now on, every command starts the same way:
 
     source {env}
 
-Then, from {workdir}:
+Then, from {workdir} — note "$SYMPOSIUM_PY", not python3:
 
-    python3 "$SYMPOSIUM_TOOLS/sync.py"    --as {prefix}
-    python3 "$SYMPOSIUM_TOOLS/publish.py" --as {prefix} --roles
+    "$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/sync.py"    --as {prefix}
+    "$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/publish.py" --as {prefix} --roles
 
 To see the record in a browser:
 
-    python3 "$SYMPOSIUM_TOOLS/serve.py" "$SYMPOSIUM_MIRROR" --port 8760
+    "$SYMPOSIUM_PY" "$SYMPOSIUM_TOOLS/serve.py" "$SYMPOSIUM_MIRROR" --port 8760
+
+env.sh records the interpreter this setup verified ({sys.executable}).
+Typing `python3` instead may pick a different one that cannot reach the server.
 
 Next: read QUICKSTART.md, part 2.""")
     return 0
