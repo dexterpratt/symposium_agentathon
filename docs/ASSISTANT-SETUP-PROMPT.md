@@ -28,6 +28,11 @@ reading tools/MEMBER-AGENT-INSTRUCTIONS.md and following it, stop — that docum
 later, when I start an actual working session.
 
 WHAT TO RUN
+First, always:
+    python3 tools/preflight.py
+It needs no account and sends no password. If it fails it will name a Python on this
+machine that works — use that full path for every command afterwards, including the
+next one. Then:
     python3 tools/setup.py --as «VEGA»
 
 Replace «VEGA» with my credential prefix. It is safe to run repeatedly.
