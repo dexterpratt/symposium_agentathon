@@ -72,8 +72,8 @@ from pathlib import Path
 import telemetry
 from ndex_io import (BASE, CANONICAL_ATTR, NON_ARTIFACT_MARKS, NON_ARTIFACT_SEGMENTS,
                      RECORD_MARK, REPLY_MARK, auth, api as _api, extract_artifact,
-                     extract_canonical, grant_read as _grant, to_cx2, upload_cx2 as _upload,
-                     user_uuid, load_canonical_dir)
+                     extract_canonical, grant_read as _grant, permission_map, to_cx2,
+                     upload_cx2 as _upload, user_uuid, load_canonical_dir)
 from validate_v6 import validate, passed, parse_instant
 
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
@@ -210,7 +210,9 @@ def discover(state):
     if st != 200:
         print(f"  ! cannot resolve admin account: HTTP {st}")
         return []
-    st, perms = api("GET", f"/v2/user/{me['externalId']}/permission?type=NETWORK&permission=READ")
+    # Paginated: the raw endpoint caps at 100 and does not say so, which silently hid every
+    # submission past the hundredth network the admin could see. See ndex_io.permission_map.
+    st, perms = permission_map(me["externalId"], ADMIN_TOK, "&permission=READ")
     if st != 200 or not isinstance(perms, dict):
         print(f"  ! permission listing failed: HTTP {st}")
         return []

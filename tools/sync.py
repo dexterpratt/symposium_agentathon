@@ -36,7 +36,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ndex_io import RECORD_MARK, api, auth, extract_artifact, whoami, load_canonical_dir
+from ndex_io import (RECORD_MARK, api, auth, extract_artifact, permission_map, whoami,
+                     load_canonical_dir)
 from validate_v6 import validate, passed, parse_address
 
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
@@ -98,7 +99,9 @@ def fetch_new(tok, state):
         return [], False, ("could not authenticate — this may be the credentials, but a TLS or "
                            "network fault looks identical here; run preflight.py to tell them "
                            "apart")
-    st, perms = api("GET", f"/v2/user/{me['externalId']}/permission?type=NETWORK", tok)
+    # Paginated: the raw endpoint caps at 100 silently, which would freeze a member's mirror at
+    # the hundredth network they can see and look exactly like a record that stopped growing.
+    st, perms = permission_map(me["externalId"], tok)
     if st != 200 or not isinstance(perms, dict):
         return [], False, f"permission listing failed: HTTP {st}"
 

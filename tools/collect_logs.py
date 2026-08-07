@@ -30,7 +30,8 @@ import pathlib
 import sys
 
 from ndex_io import (REPORT_ATTR, REPORT_MARK, REPORT_SEGMENT, TELEMETRY_ATTR,
-                     TELEMETRY_MARK, TELEMETRY_SEGMENT, api, auth, extract_blob)
+                     TELEMETRY_MARK, TELEMETRY_SEGMENT, api, auth, extract_blob,
+                     permission_map)
 
 ADMIN_USER, ADMIN_TOK = auth("ADMIN")
 
@@ -60,9 +61,9 @@ def granted_networks(skip=()):
     if st != 200 or not isinstance(me, dict):
         print(f"! cannot resolve admin account: HTTP {st}")
         return []
-    st, perms = api("GET",
-                    f"/v2/user/{me['externalId']}/permission?type=NETWORK&permission=READ",
-                    ADMIN_TOK)
+    # Paginated: see ndex_io.permission_map. Unpaginated, logs and reports pushed after the
+    # hundredth network simply never appear, and the measurement quietly loses sessions.
+    st, perms = permission_map(me["externalId"], ADMIN_TOK, "&permission=READ")
     if st != 200 or not isinstance(perms, dict):
         print(f"! permission listing failed: HTTP {st}")
         return []

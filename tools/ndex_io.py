@@ -78,6 +78,39 @@ def whoami(tok):
     return (b or {}) if st == 200 and isinstance(b, dict) else {}
 
 
+PERMISSION_PAGE = 200
+
+
+def permission_map(user_uuid_, tok, extra=""):
+    """The WHOLE of a user's network permission listing. -> (status, {uuid: level}).
+
+    `/v2/user/<id>/permission?type=NETWORK` returns at most 100 entries and says NOTHING about
+    having truncated: no total, no next-page link, no flag. Callers that simply read the result
+    saw the first 100 networks and treated that as everything.
+
+    That is the same silent-drop failure the permission map was adopted to AVOID. Search-based
+    discovery was abandoned because a private network has `indexLevel: NONE` and never appears
+    in /v2/search/network — but the replacement had its own cap, and it bit on 2026-08-07 the
+    moment the admin could see more than 100 networks: `agent_lyra`'s Data artifact was
+    uploaded, granted to the admin, and correctly present in the network's own permission map,
+    yet absent from the admin's listing. The gate deferred its bundle forever, waiting for a
+    submission that had in fact arrived. Members beyond the first 100 would have gone the same
+    way, one by one, with no error anywhere.
+
+    `start` is a PAGE index, not a row offset. A short page means the end.
+    """
+    out, page = {}, 0
+    while True:
+        st, b = api("GET", f"/v2/user/{user_uuid_}/permission?type=NETWORK{extra}"
+                           f"&start={page}&size={PERMISSION_PAGE}", tok)
+        if st != 200 or not isinstance(b, dict):
+            return (st, out if out else None)
+        out.update(b)
+        if len(b) < PERMISSION_PAGE:
+            return 200, out
+        page += 1
+
+
 def user_uuid(username, tok):
     st, b = api("GET", f"/v2/user?username={username}", tok)
     return b.get("externalId") if st == 200 and isinstance(b, dict) else None
