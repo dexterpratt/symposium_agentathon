@@ -31,13 +31,64 @@ import urllib.request
 BASE = os.environ.get("SYMPOSIUM_BASE", "https://symposium.ndexbio.org")
 PROBE_PATH = "/v2/user"          # answers 401 unauthenticated: proof of reach without a login
 
-CANDIDATES = [
-    "/opt/homebrew/bin/python3",
-    "/usr/local/bin/python3",
-    "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
-    "/opt/homebrew/bin/python3.12",
-    "/opt/homebrew/bin/python3.11",
-]
+def candidates():
+    """Every Python interpreter this machine plausibly has, most likely to work first.
+
+    A hardcoded list of Homebrew paths was wrong for the first participant who tried it: they
+    install with Anaconda, which lives somewhere else entirely. So look in four ways —
+    everything on PATH, the active conda environment, the usual install roots for Homebrew /
+    python.org / Anaconda / Miniconda / MacPorts, and pyenv's versions — and de-duplicate by
+    the path each one really resolves to.
+    """
+    import glob
+    found = []
+
+    def add(p):
+        if p and os.path.exists(p) and os.access(p, os.X_OK) and not os.path.isdir(p):
+            found.append(p)
+
+    # 1. anything named pythonN on PATH
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if not d:
+            continue
+        for name in ("python3", "python3.13", "python3.12", "python3.11", "python3.10",
+                     "python3.9", "python"):
+            add(os.path.join(d, name))
+
+    # 2. the conda environment that is active right now, if any
+    if os.environ.get("CONDA_PREFIX"):
+        add(os.path.join(os.environ["CONDA_PREFIX"], "bin", "python3"))
+
+    # 3. the usual roots, including the ones Anaconda uses
+    home = os.path.expanduser("~")
+    roots = ["/opt/homebrew", "/usr/local", "/opt/local",
+             "/opt/anaconda3", "/opt/miniconda3", "/opt/miniforge3",
+             home + "/anaconda3", home + "/miniconda3", home + "/miniforge3",
+             home + "/opt/anaconda3", home + "/opt/miniconda3",
+             "/Library/Frameworks/Python.framework/Versions/Current"]
+    for r in roots:
+        for name in ("python3", "python3.13", "python3.12", "python3.11"):
+            add(os.path.join(r, "bin", name))
+    for pat in ("/Library/Frameworks/Python.framework/Versions/3.*/bin/python3",
+                home + "/.pyenv/versions/*/bin/python3",
+                home + "/.conda/envs/*/bin/python3",
+                "/opt/anaconda3/envs/*/bin/python3",
+                home + "/anaconda3/envs/*/bin/python3"):
+        for p in sorted(glob.glob(pat), reverse=True):
+            add(p)
+
+    # de-duplicate by what each path actually resolves to, keeping the friendliest name
+    seen, out = set(), []
+    for p in found:
+        try:
+            real = os.path.realpath(p)
+        except Exception:                                      # noqa: BLE001
+            continue
+        if real in seen:
+            continue
+        seen.add(real)
+        out.append(p)
+    return out
 
 
 def reach():
@@ -68,12 +119,14 @@ def probe_others():
     """Test every other interpreter we can find, by running this script's --probe in it."""
     here = os.path.realpath(sys.executable)
     out = []
-    for cand in CANDIDATES:
-        if not os.path.exists(cand) or os.path.realpath(cand) == here:
+    for cand in candidates():
+        if os.path.realpath(cand) == here:
             continue
+        if len(out) >= 8:            # enough to answer the question; each costs a request
+            break
         try:
             r = subprocess.run([cand, os.path.abspath(__file__), "--probe"],
-                               capture_output=True, text=True, timeout=60)
+                               capture_output=True, text=True, timeout=45)
             d = json.loads(r.stdout.strip().splitlines()[-1])
             out.append((cand, d))
         except Exception:                                      # noqa: BLE001
@@ -114,20 +167,26 @@ def main():
     others = probe_others()
     working = [(c, d) for c, d in others if d.get("ok")]
     if working:
+        # Three, not all of them. A machine with Anaconda has a working interpreter in every
+        # environment, and a list of nine is a wall of text for someone who only needs one.
         print("Another Python on this machine WORKS. Use it for every command:\n")
-        for c, d in working:
+        for c, d in working[:3]:
             print("    %s\n        (%s)" % (c, d["python"]))
-        print("\nFor example:")
-        print("    %s tools/setup.py --as <YOUR_PREFIX>" % working[0][0])
+        if len(working) > 3:
+            print("\n    (%d more also work; any one of them is fine)" % (len(working) - 3))
+        print("\nCopy this, replacing the prefix with yours:\n")
+        print("    %s tools/setup.py --as <YOUR_PREFIX>\n" % working[0][0])
+        print("Use that same full path everywhere the instructions say `python3`.")
     elif others:
         print("Other interpreters found, none of which could connect either:")
         for c, d in others:
             print("    %s  (%s) — %s" % (c, d["python"], d["kind"]))
         print("\nThat points at the network rather than at Python: a VPN, proxy or firewall.")
     else:
-        print("No other Python found on this machine. Install one:")
-        print("    brew install python@3.12")
-        print("then re-run this with /opt/homebrew/bin/python3 .")
+        print("No other working Python found on this machine. Install one:")
+        print("    brew install python@3.12          # Homebrew")
+        print("    conda create -n symposium python=3.12   # if you use Anaconda")
+        print("then re-run this preflight with that interpreter's full path.")
     return 1
 
 

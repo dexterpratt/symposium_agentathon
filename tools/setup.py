@@ -227,11 +227,17 @@ def check_tls():
     if not lib.startswith("LibreSSL"):
         return True, f"python {sys.version.split()[0]}, {lib}"
 
+    # Reuse preflight's discovery rather than a second hardcoded list — the first participant
+    # to try this installs with Anaconda, which none of the Homebrew paths would have found.
+    try:
+        sys.path.insert(0, str(TOOLS))
+        from preflight import candidates
+        cands = candidates()
+    except Exception:                                          # noqa: BLE001
+        cands = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
     alts = []
-    for cand in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3",
-                 "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"):
-        p = pathlib.Path(cand)
-        if not p.exists():
+    for cand in cands[:8]:
+        if not pathlib.Path(cand).exists() or pathlib.Path(cand).resolve() == pathlib.Path(sys.executable).resolve():
             continue
         try:
             out = subprocess.run([cand, "-c", "import ssl,sys;"
@@ -241,6 +247,8 @@ def check_tls():
             continue
         if out and "LibreSSL" not in out:
             alts.append((cand, out))
+        if len(alts) >= 3:
+            break
 
     msg = [f"python {sys.version.split()[0]} is linked against {lib}.",
            "",
@@ -256,8 +264,11 @@ def check_tls():
         msg += ["", f"  For example:", f"      {alts[0][0]} tools/setup.py --as <PREFIX>"]
     else:
         msg += ["", "  None found on this machine. Install one:",
-                "      brew install python@3.12",
-                "  or download from python.org and then run its Install Certificates.command."]
+                "      brew install python@3.12                  # Homebrew",
+                "      conda create -n symposium python=3.12     # Anaconda",
+                "  or download from python.org and run its Install Certificates.command.",
+                "",
+                "  Or just run:  python3 tools/preflight.py  — it searches harder."]
     return False, "\n".join(msg)
 
 
