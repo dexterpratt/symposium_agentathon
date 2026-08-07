@@ -55,9 +55,16 @@ and tell me to open http://localhost:8760 .
 
 IF SOMETHING FAILS
 Report the exact error and stop. Do not edit any file in tools/, do not work around a
-failing check, and do not install anything — this toolchain needs only Python 3.9+ and
-the standard library, so a missing dependency means something else is wrong. A clear
-report of a blocker is a complete and successful outcome.
+failing check, and do not install any Python PACKAGES — this toolchain needs only the
+standard library, so a missing module means something else is wrong. A clear report of a
+blocker is a complete and successful outcome.
+
+ONE EXCEPTION, AND IT IS COMMON ON A MAC
+If setup.py says the interpreter is linked against LibreSSL, that is real and it will not
+work: macOS's built-in python3 cannot complete the TLS handshake with this server, and it
+fails BEFORE any credential is sent, so it looks like a rejected password and is not one.
+setup.py names the working interpreters it can find. Re-run it with one of those full
+paths, and use that same path for every command afterwards.
 
 WHILE I GET ORIENTED
 Once the record is synced you can answer questions about it directly from the JSON files
@@ -80,6 +87,7 @@ the password and set it up for you. That would put the credential into the chat 
 which is stored. The prompt forecloses it, and tells the assistant what to do if it happens
 anyway, because saying "don't" is not the same as knowing how to recover.
 
-**"Do not install anything"** — the toolchain is standard library only. If an assistant thinks it
-needs to `pip install` something, its diagnosis is wrong, and installing will bury the real
-error under a new one.
+**"Do not install any Python packages"** — the toolchain is standard library only. If an
+assistant thinks it needs to `pip install` something, its diagnosis is wrong, and installing will
+bury the real error under a new one. The interpreter itself is the exception: a Mac with only the
+built-in `python3` genuinely needs a different one, because LibreSSL cannot reach the server.

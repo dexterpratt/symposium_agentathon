@@ -25,6 +25,25 @@ Nothing in this setup needs it. A chat transcript is written down and kept, and 
 lands in one has to be treated as compromised. There is a step below where *you* type it into a
 file, in your own editor. That is the only place it goes.
 
+## First: check your Python (Mac users especially)
+
+macOS ships a `python3` that **cannot connect to this server**. It is linked against LibreSSL
+2.8.3, and the connection dies with `sslv3 alert handshake failure` before your username is ever
+sent. If `python3` on your machine is that one, everything below fails in a way that looks like
+a wrong password.
+
+```bash
+python3 -c "import ssl, sys; print(sys.version.split()[0], ssl.OPENSSL_VERSION)"
+```
+
+- Says **OpenSSL** — you are fine, carry on.
+- Says **LibreSSL** — use a different interpreter. Try `/opt/homebrew/bin/python3` or
+  `/usr/local/bin/python3`, and use that full path everywhere below in place of `python3`.
+  If neither exists: `brew install python@3.12`.
+
+`setup.py` checks this for you and names the working interpreters it can find, so if you are
+unsure, just run it and read what it says.
+
 ## Hand it to your assistant
 
 Open Claude Code or Codex in the folder where you cloned this repository, and paste

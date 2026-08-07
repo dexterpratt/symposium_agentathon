@@ -158,6 +158,10 @@ def diagnose(prefix):
         import hashlib
         return hashlib.sha256(("symposium-fingerprint:" + v).encode()).hexdigest()[:6]
 
+    tls_ok, tls_msg = check_tls()
+    print(f"python       {tls_msg if tls_ok else tls_msg.splitlines()[0]}")
+    if not tls_ok:
+        print("\n".join(tls_msg.splitlines()[1:]))
     print(f"server       {BASE_URL()}")
     for var in ("SYMPOSIUM_BASE", "NDEX_BASE"):
         if os.environ.get(var):
@@ -204,6 +208,57 @@ def BASE_URL():
     sys.path.insert(0, str(TOOLS))
     import ndex_io
     return ndex_io.BASE
+
+
+def check_tls():
+    """-> (ok, message). Is THIS interpreter able to speak TLS to a modern server?
+
+    macOS ships /usr/bin/python3 linked against LibreSSL 2.8.3, which cannot complete a
+    handshake with symposium.ndexbio.org: the server answers `sslv3 alert handshake failure`
+    and the request dies before any credential is sent. On a Mac where nothing else is
+    installed, `python3` IS that interpreter, so the toolchain fails on the very first command
+    for a reason that has nothing to do with the toolchain.
+
+    Checked before authenticating, because the failure otherwise surfaces as an
+    authentication problem and sends people to re-check a correct password.
+    """
+    import ssl
+    lib = ssl.OPENSSL_VERSION
+    if not lib.startswith("LibreSSL"):
+        return True, f"python {sys.version.split()[0]}, {lib}"
+
+    alts = []
+    for cand in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3",
+                 "/Library/Frameworks/Python.framework/Versions/Current/bin/python3"):
+        p = pathlib.Path(cand)
+        if not p.exists():
+            continue
+        try:
+            out = subprocess.run([cand, "-c", "import ssl,sys;"
+                                  "print(sys.version.split()[0], ssl.OPENSSL_VERSION)"],
+                                 capture_output=True, text=True, timeout=20).stdout.strip()
+        except Exception:                                      # noqa: BLE001
+            continue
+        if out and "LibreSSL" not in out:
+            alts.append((cand, out))
+
+    msg = [f"python {sys.version.split()[0]} is linked against {lib}.",
+           "",
+           "  That TLS stack cannot complete a handshake with this server. The request fails",
+           "  with `sslv3 alert handshake failure` BEFORE your username or password is sent,",
+           "  so this is not a credential problem and re-typing your password will not help.",
+           "",
+           "  This is macOS's built-in python3. You need a different one."]
+    if alts:
+        msg += ["", "  Working interpreters already on this machine — use one of these:"]
+        for path, ver in alts:
+            msg.append(f"      {path}     ({ver})")
+        msg += ["", f"  For example:", f"      {alts[0][0]} tools/setup.py --as <PREFIX>"]
+    else:
+        msg += ["", "  None found on this machine. Install one:",
+                "      brew install python@3.12",
+                "  or download from python.org and then run its Install Certificates.command."]
+    return False, "\n".join(msg)
 
 
 def authenticate(prefix, user=None, password=None):
@@ -304,6 +359,12 @@ def main(argv=None):
     prefix = args.prefix.upper()
 
     print(f"Symposium setup — credential prefix {prefix}\n")
+
+    tls_ok, tls_msg = check_tls()
+    print(f"  python       {tls_msg if tls_ok else tls_msg.splitlines()[0]}")
+    if not tls_ok:
+        print("\n".join(tls_msg.splitlines()[1:]))
+        return 1
     if args.diagnose:
         return diagnose(prefix)
 

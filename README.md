@@ -262,7 +262,12 @@ it down instead.
 
 ## 5. What to bring
 
-**Python 3.9 or later. That is the whole dependency list** — the toolchain is standard library
+**Python 3.9 or later, linked against OpenSSL. That is the whole dependency list** — but the
+SSL part is not a formality: macOS's built-in `python3` uses LibreSSL 2.8.3 and cannot complete
+the TLS handshake with this server, failing before any credential is sent. Check with
+`python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"`; if it says LibreSSL, use a Homebrew or
+python.org interpreter instead. `setup.py` checks this and names a working one. The toolchain
+is otherwise standard library
 only, there is nothing to `pip install`, and Cytoscape is vendored into the repo. Check it
 works before you arrive:
 
