@@ -36,6 +36,7 @@ transcript, and possibly in logs, permanently. There is no step here that requir
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import stat
@@ -184,12 +185,18 @@ def diagnose(prefix):
         if not u or not p:
             print(f"  {label:6s} incomplete")
             continue
-        import base64
-        sys.path.insert(0, str(TOOLS))
-        import ndex_io
-        tok = base64.b64encode(f"{u}:{p}".encode()).decode()
-        me = ndex_io.whoami(tok)
-        print(f"  {label:6s} {'OK — ' + me['userName'] if me.get('userName') else 'REJECTED'}")
+        acct, status, detail = authenticate(prefix, u, p)
+        if status == 200 and acct:
+            print(f"  {label:6s} OK — {acct}")
+        elif status == 0:
+            print(f"  {label:6s} SERVER UNREACHABLE (no HTTP response at all)")
+            print(f"         {detail}")
+            print(f"         The credentials were never sent. This is a NETWORK problem — "
+                  f"nothing here\n         is wrong with your password.")
+        else:
+            print(f"  {label:6s} HTTP {status}" + (" — credentials rejected" if status == 401 else ""))
+            if detail:
+                print(f"         {detail[:160]}")
     return 0
 
 
@@ -199,22 +206,61 @@ def BASE_URL():
     return ndex_io.BASE
 
 
-def whoami(prefix):
-    """-> (account, error). Authenticates. Prints nothing."""
+def authenticate(prefix, user=None, password=None):
+    """-> (account, status, detail). Prints nothing.
+
+    `status` distinguishes the three outcomes that were previously one message:
+      200  authenticated
+      401  the server was reached and REJECTED the credentials
+      0    the server was never reached at all — DNS, TLS, proxy, no network
+
+    That last case is the one that mattered. `ndex_io.api` returns status 0 on any transport
+    exception, and reporting it as "the server did not accept those credentials" sends someone
+    to re-check a password that is perfectly correct. It is also exactly what a second machine
+    on a different network produces.
+    """
     sys.path.insert(0, str(TOOLS))
     try:
         import ndex_io
     except Exception as e:                                     # noqa: BLE001
-        return None, f"cannot import the toolchain from {TOOLS}: {e}"
-    try:
-        _, tok = ndex_io.auth(prefix)
-    except SystemExit as e:
-        return None, str(e)
-    me = ndex_io.whoami(tok)
-    if not me or not me.get("userName"):
-        return None, ("the server did not accept those credentials — check the username and "
-                      "password in the file, then run this again")
-    return me["userName"], None
+        return None, None, f"cannot import the toolchain from {TOOLS}: {e}"
+    if user and password:
+        import base64
+        tok = base64.b64encode(f"{user}:{password}".encode()).decode()
+    else:
+        try:
+            _, tok = ndex_io.auth(prefix)
+        except SystemExit as e:
+            return None, None, str(e)
+    st, body = ndex_io.api("GET", "/v2/user?valid=true", tok, raw=True)
+    if st == 200:
+        try:
+            return json.loads(body).get("userName"), 200, ""
+        except Exception:                                      # noqa: BLE001
+            return None, 200, "the server returned something that is not JSON"
+    return None, st, str(body)[:200]
+
+
+def auth_message(status, detail, prefix):
+    """The human explanation for a non-200. Kept apart so --diagnose and setup agree."""
+    if status == 0:
+        return (f"CANNOT REACH THE SERVER — this is a network problem, not a credential "
+                f"problem.\n"
+                f"               Your username and password were never sent anywhere. Check "
+                f"that this\n"
+                f"               machine can reach {BASE_URL()} at all — a VPN, a proxy, a "
+                f"firewall or\n"
+                f"               simply being offline all produce this. Try:\n"
+                f"                   curl -sS -o /dev/null -w '%{{http_code}}\\n' "
+                f"{BASE_URL()}/v2/user\n"
+                f"               Underlying error: {detail}")
+    if status == 401:
+        return (f"the server was reached and REJECTED these credentials (HTTP 401).\n"
+                f"               The password is wrong, or the username is not the account "
+                f"name.\n"
+                f"               Run: python3 setup.py --as {prefix} --diagnose")
+    return (f"the server answered HTTP {status}, which is neither success nor a rejection.\n"
+            f"               {detail}")
 
 
 def write_env(workdir, prefix, account, members):
@@ -289,14 +335,9 @@ def main(argv=None):
     note = load_credentials(prefix)
     if note:
         print(f"  environment  {note}")
-    account, err = whoami(prefix)
-    if err:
-        print(f"  account      ! {err}")
-        print(f"               The file itself parses and contains both values, so if you have\n"
-              f"               just corrected it, the correction WAS read — the server rejected\n"
-              f"               what it now says. Check for a typo in the password, and that the\n"
-              f"               username is the account name (e.g. agent_deneb) and not the\n"
-              f"               prefix ({prefix}).")
+    account, status, detail = authenticate(prefix)
+    if status != 200 or not account:
+        print(f"  account      ! {auth_message(status, detail, prefix) if status is not None else detail}")
         return 1
     print(f"  account      authenticated as {account}")
 
