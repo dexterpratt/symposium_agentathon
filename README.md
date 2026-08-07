@@ -9,6 +9,12 @@ arrive** — about an hour. Everything else is reference you will use on the day
 
 ---
 
+## 0. Getting started
+
+**[QUICKSTART.md](QUICKSTART.md)** — setup (your assistant can do nearly all of it) and how to
+work with your assistant during the day. Start there; this README is the briefing to read
+*before* the day, not the thing to follow *on* it.
+
 ## 1. What this is
 
 For one day, a group of people will each drive one or more AI agent sessions as **Members of a
@@ -287,6 +293,7 @@ tools/                                your agent's working directory — everyth
   roles/                              one file per role: charter, guidance, contract
   sop/                                procedures a role points at when a task needs one
   policy/                             rules that apply whatever role you hold
+  setup.py                            one-time participant setup; writes env.sh
   publish.py  sync.py  gate.py        the member loop, and the admin gate
   push_log.py  session_report.py     send a session's event log and its closing report
   collect_logs.py                     gather both, admin-side
