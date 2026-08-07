@@ -66,7 +66,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import telemetry
@@ -74,7 +74,7 @@ from ndex_io import (BASE, CANONICAL_ATTR, NON_ARTIFACT_MARKS, NON_ARTIFACT_SEGM
                      RECORD_MARK, REPLY_MARK, auth, api as _api, extract_artifact,
                      extract_canonical, grant_read as _grant, to_cx2, upload_cx2 as _upload,
                      user_uuid, load_canonical_dir)
-from validate_v6 import validate, passed
+from validate_v6 import validate, passed, parse_instant
 
 MIRROR = Path(os.environ.get("SYMPOSIUM_MIRROR", "./record"))
 DRY = "--dry-run" in sys.argv
@@ -633,10 +633,26 @@ def run_once():
                            atype=m["canonical"]["artifact"].get("type"),
                            submitter=m["owner"], waiting_for=sorted(missing))
 
+    # Stamps must strictly increase from one bundle to the next. `form_bundles` already orders
+    # bundles so one is accepted before any bundle addressing it, but ordering the ACCEPTS is not
+    # enough: the ORDER check requires a Ground's target to be strictly EARLIER than the artifact
+    # grounding on it, and at `timespec="seconds"` two bundles processed in the same wall-clock
+    # second get the same stamp. On 2026-08-07 that rejected the first participant-built Argument
+    # in the record — it grounded on Data the gate had stamped in the same second, in the same
+    # pass. A member cannot avoid this, because the gate owns `created`; the gate was rejecting a
+    # correctly ordered submission for its own clock resolution. Seeded from the record so the
+    # guarantee survives a restart.
+    seen = [parse_instant(c.get("artifact", {}).get("created")) for c in record]
+    prev = max([d for d in seen if d], default=None)
+
     for bundle in bundles:
         # one act -> one timestamp, so the record shows the single-act property directly
         # rather than requiring a reader to apply the ordering exception
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        if prev is not None and now <= prev:
+            now = prev + timedelta(seconds=1)
+        prev = now
+        stamp = now.isoformat(timespec="seconds")
         label = " + ".join(m["canonical"]["artifact"]["name"] for m in bundle)
         print(f"  {label}" + ("   [bundle]" if len(bundle) > 1 else ""))
         for m in bundle:
@@ -691,7 +707,13 @@ def run_once():
                     telemetry.emit("gate", "gate_withhold", "withheld", artifact=m["name"],
                                    atype=m["canonical"]["artifact"].get("type"),
                                    submitter=m["owner"], findings=f, bundle=len(bundle))
-    save_state(state)
+    # A dry run reports; it must not write. `gate_loop.py` holds this file and §4 of the handoff
+    # tells the operator to run `--dry-run` while the loop is live: if a dry run's stale copy of
+    # `state` lands between the loop's read and write, the loop's newest grants are lost and an
+    # already-accepted submission is re-processed next pass, which fails UNIQUE and posts a
+    # rejection reply for work that is in fact in the record.
+    if not DRY:
+        save_state(state)
     return 0
 
 
